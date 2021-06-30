@@ -479,7 +479,7 @@ function update_counts() {
 }
 
 function cb_init(rv) {
-	let txt = 'Regtest: -b '+rv.binary+' -f '+rv.folder;
+	let txt = 'Regtest: '+rv.folder;
 	if (rv.step) {
 		txt += ' -s '+rv.step;
 	}
