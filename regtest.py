@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+import base64
 from collections import defaultdict
 from functools import partial
 from http import HTTPStatus
 import http.server
 import json
+import math
 import os
 import shlex
 import socketserver
@@ -12,8 +14,46 @@ import subprocess
 import sys
 import urllib.parse
 import xml.etree.ElementTree
+import zlib
 
-CORPORA = {}
+def hash_line(s):
+    return hex(zlib.adler32(s.encode('utf-8')))
+
+def load_input(fname, sep='\n'):
+    with open(fname, 'r') as fin:
+        lines = fin.read().split(sep)
+        ret = {}
+        for i, l_ in enumerate(lines):
+            l = l_.strip()
+            if not l:
+                continue
+            ret[hash_line(l)] = [i, l]
+        return ret
+
+def load_output(fname, sep='\n'):
+    try:
+        with open(fname, 'r') as fin:
+            lines = fin.read().split(sep)
+            ret = {}
+            for l_ in lines:
+                l = l_.strip()
+                if not l or l[0] != '[':
+                    continue
+                ident, content = l[1:].split(']', 1)
+                content = content.strip()
+                hsh, linenum = ident.split('-')
+                if not content:
+                    print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
+                    sys.exit(1)
+                ret[hsh] = [int(linenum), content]
+            return ret
+    except FileNotFoundError:
+        return {}
+
+def save_output(fname, data, sep='\n'):
+    with open(fname, 'w') as fout:
+        for inhash in sorted(data.keys()):
+            fout.write('[%s-0] %s%s' % (inhash, data[inhash][1], sep))
 
 class Step:
     prognames = {
@@ -54,14 +94,24 @@ class Step:
                 for op in Step.morphmodes:
                     if op in self.args:
                         self.name = Step.morphmodes[op]
-    def run(self, in_name, out_name):
+    def run(self, in_name, out_name, sep='\n', first=False):
         cmd = [self.prog] + self.args
         print('running', cmd)
         if self.prog in Step.prognames or self.prog in ['lt-proc', 'hfst-proc']:
             cmd.append('-z')
         with open(in_name, 'r') as fin:
-            # TODO: non-\n separators
-            txt = fin.read().replace('\n', '\n\0')
+            if first:
+                txt = ''
+                lines = fin.read().split(sep)
+                for i, l in enumerate(lines):
+                    s = l.strip()
+                    if not s:
+                        continue
+                    h = hash_line(s)
+                    # TODO: separator?
+                    txt += '[%s-%s] %s\n\0' % (h, i, s)
+            else:
+                txt = fin.read().replace(sep, sep+'\0')
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE)
             stdout, stderr = proc.communicate(txt.encode('utf-8'))
@@ -82,9 +132,9 @@ class Mode:
         Mode.all_modes[self.name] = self
     def run(self, corpusname, filename):
         fin = 'test/' + filename
-        for step in self.steps:
+        for i, step in enumerate(self.steps):
             fout = 'test/%s-%s-output.txt' % (corpusname, step.name)
-            step.run(fin, fout)
+            step.run(fin, fout, first=(i == 0))
             fin = fout
         with open(fin, 'r') as f1:
             with open('test/%s-all-output.txt' % corpusname, 'w') as f2:
@@ -156,8 +206,59 @@ def check_git():
         print('Cloning failed. Please check the remote url and try again.')
         sys.exit(1)
 
+class Corpus:
+    all_corpora = {}
+    def __init__(self, name, blob):
+        # TODO: more error checking, start-step, command
+        self.name = name
+        self.mode = blob['mode']
+        self.infile = 'test/' + blob['input']
+        self.data = {}
+        self.loaded = False
+        Corpus.all_corpora[name] = self
+    def run(self):
+        Mode.all_modes[self.mode].run(self.name, self.infile)
+        self.loaded = False
+    def load(self):
+        if self.loaded:
+            return
+        ins = load_input(self.infile)
+        outs = []
+        cmds = Mode.all_modes[self.mode].get_commands()
+        self.data = {
+            'inputs': ins,
+            'cmds': [],
+            'count': len(ins),
+            'gold': {}
+        }
+        for c in cmds:
+            outfile = 'test/%s-%s-output.txt' % (self.name, c)
+            expfile = 'test/%s-%s-expected.txt' % (self.name, c)
+            outdata = load_output(outfile)
+            expdata = None
+            if os.path.isfile(expfile):
+                expdata = load_output(expfile)
+            else:
+                save_output(expfile, outdata)
+                expdata = outdata
+            if not outs:
+                outs = expdata.keys()
+            self.data['cmds'].append({
+                'cmd': c,
+                'opt': c,
+                'output': outdata,
+                'expect': expdata,
+                'trace': {} # TODO?
+            })
+
+        add = [k for k in ins if k not in outs]
+        delete = [k for k in outs if k not in ins]
+        add.sort(key = lambda x: ins[x][0])
+        delete.sort()
+        self.data['add'] = add
+        self.data['del'] = delete
+
 def load_corpora():
-    global CORPORA
     if not os.path.isdir('test') or not os.path.isfile('test/tests.json'):
         if os.path.isdir('.git'):
             if check_git():
@@ -168,7 +269,9 @@ def load_corpora():
         sys.exit(1)
     with open('test/tests.json') as ts:
         try:
-            CORPORA = json.load(ts)
+            blob = json.load(ts)
+            for k in blob:
+                Corpus(k, blob[k])
         except json.JSONDecoderError as e:
             print('test/tests.json is not a valid JSON document. First error on line %s' % e.lineno)
             sys.exit(1)
@@ -176,12 +279,9 @@ def load_corpora():
 def test_run(corpora):
     ls = corpora
     if '*' in corpora:
-        ls = list(CORPORA.keys())
+        ls = list(Corpus.all_corpora.keys())
     for name in ls:
-        corp = CORPORA[name]
-        # TODO: more error checking, start-step, command
-        if 'mode' in corp:
-            Mode.all_modes[corp['mode']].run(name, corp['input'])
+        Corpus.all_corpora[name].run()
     return True, ''
 
 def cb_load(page):
@@ -195,9 +295,11 @@ def cb_load(page):
         '_count': 0,
         '_ordered': []
     }
-    for name, corpus in CORPORA.items():
-        state[name] = {}
-        state[name]['cmds'] = Mode.all_modes[corpus['mode']].get_commands()
+    for name, corpus in Corpus.all_corpora.items():
+        corpus.load()
+        state[name] = corpus.data
+        state['_count'] += state[name]['count']
+    state['_pages'] = math.ceil(state['_count']/25) # TODO
     return {'state': state}
 
 class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -230,12 +332,12 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if params['a'][0] == 'init':
             resp['folder'] = os.path.basename(os.getcwd())
-            resp['corpora'] = list(CORPORA.keys())
+            resp['corpora'] = list(sorted(Corpus.all_corpora.keys()))
         elif params['a'][0] == 'load':
-            try:
-                resp = cb_load(params['p'][0])
-            except:
-                resp['error'] = 'Current state is missing or invalid. You will need to run the regression test for all corpora.'
+            #try:
+            resp = cb_load(params['p'][0])
+            #except:
+            #    resp['error'] = 'Current state is missing or invalid. You will need to run the regression test for all corpora.'
         elif params['a'][0] == 'run':
             good, output = test_run(params.get('c', ['*']))
             resp['good'] = good
