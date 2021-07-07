@@ -18,7 +18,7 @@ import xml.etree.ElementTree
 import zlib
 
 def hash_line(s):
-    return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'_-')[:12].decode('utf-8')
+    return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'-_')[:12].decode('utf-8')
 
 def load_input(fname, sep='\n'):
     with open(fname, 'r') as fin:
