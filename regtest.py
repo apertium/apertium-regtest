@@ -3,6 +3,7 @@
 import base64
 from collections import defaultdict
 from functools import partial
+import hashlib
 from http import HTTPStatus
 import http.server
 import json
@@ -17,7 +18,7 @@ import xml.etree.ElementTree
 import zlib
 
 def hash_line(s):
-    return hex(zlib.adler32(s.encode('utf-8')))
+    return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'_-')[:12].decode('utf-8')
 
 def load_input(fname, sep='\n'):
     with open(fname, 'r') as fin:
@@ -41,7 +42,7 @@ def load_output(fname, sep='\n'):
                     continue
                 ident, content = l[1:].split(']', 1)
                 content = content.strip()
-                hsh, linenum = ident.split('-')
+                hsh, linenum = ident.split('#')
                 if not content:
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
                     sys.exit(1)
@@ -53,7 +54,32 @@ def load_output(fname, sep='\n'):
 def save_output(fname, data, sep='\n'):
     with open(fname, 'w') as fout:
         for inhash in sorted(data.keys()):
-            fout.write('[%s-0] %s%s' % (inhash, data[inhash][1], sep))
+            fout.write('[%s#0] %s%s' % (inhash, data[inhash][1], sep))
+
+def load_gold(fname, sep='\n'):
+    try:
+        with open(fname, 'r') as fin:
+            lines = fin.read().split(sep)
+            ret = defaultdict(list)
+            for l_ in lines:
+                l = l_.strip()
+                if not l or l[0] != '[':
+                    continue
+                ident, content = l[1:].split(']', 1)
+                content = content.strip()
+                if not content:
+                    print('ERROR: Empty entry %s in %s' % (ident, fname))
+                    sys.exit(1)
+                ret[ident].append(content)
+            return ret
+    except FileNotFoundError:
+        return {}
+
+def save_gold(fname, data, sep='\n'):
+    with open(fname, 'w') as fout:
+        for inhash in sorted(data.keys()):
+            for ln in sorted(data[inhash]):
+                fout.write('[%s] %s%s' % (inhash, ln, sep))
 
 class Step:
     prognames = {
@@ -109,7 +135,7 @@ class Step:
                         continue
                     h = hash_line(s)
                     # TODO: separator?
-                    txt += '[%s-%s] %s\n\0' % (h, i, s)
+                    txt += '[%s#%s] %s\n\0' % (h, i, s)
             else:
                 txt = fin.read().replace(sep, sep+'\0')
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
@@ -131,7 +157,8 @@ class Mode:
                 s.name += str(nm[s.name])
         Mode.all_modes[self.name] = self
     def run(self, corpusname, filename):
-        fin = 'test/' + filename
+        print('run(%s, %s)' % (corpusname, filename))
+        fin = filename
         for i, step in enumerate(self.steps):
             fout = 'test/%s-%s-output.txt' % (corpusname, step.name)
             step.run(fin, fout, first=(i == 0))
@@ -215,10 +242,22 @@ class Corpus:
         self.infile = 'test/' + blob['input']
         self.data = {}
         self.loaded = False
+        self.unsaved = set()
         Corpus.all_corpora[name] = self
     def run(self):
         Mode.all_modes[self.mode].run(self.name, self.infile)
         self.loaded = False
+    def exp_name(self, cmd):
+        return 'test/%s-%s-expected.txt' % (self.name, cmd)
+    def out_name(self, cmd):
+        return 'test/%s-%s-output.txt' % (self.name, cmd)
+    def gold_name(self, cmd):
+        return 'test/%s-%s-gold.txt' % (self.name, cmd)
+    def save(self):
+        for blob in self.data['cmds']:
+            if blob['cmd'] in self.unsaved:
+                save_output(self.exp_name(blob['cmd']), blob['expect'])
+        self.unsaved = set()
     def load(self):
         if self.loaded:
             return
@@ -228,19 +267,21 @@ class Corpus:
         self.data = {
             'inputs': ins,
             'cmds': [],
-            'count': len(ins),
-            'gold': {}
+            'count': len(ins)
         }
         for c in cmds:
-            outfile = 'test/%s-%s-output.txt' % (self.name, c)
-            expfile = 'test/%s-%s-expected.txt' % (self.name, c)
-            outdata = load_output(outfile)
-            expdata = None
+            expfile = self.exp_name(c)
+            outdata = load_output(self.out_name(c))
+            expdata = {}
             if os.path.isfile(expfile):
                 expdata = load_output(expfile)
             else:
                 save_output(expfile, outdata)
                 expdata = outdata
+            golddata = {}
+            goldfile = self.gold_name(c)
+            if os.path.isfile(goldfile):
+                golddata = load_gold(goldfile)
             if not outs:
                 outs = expdata.keys()
             self.data['cmds'].append({
@@ -248,6 +289,7 @@ class Corpus:
                 'opt': c,
                 'output': outdata,
                 'expect': expdata,
+                'gold': golddata,
                 'trace': {} # TODO?
             })
 
@@ -257,6 +299,50 @@ class Corpus:
         delete.sort()
         self.data['add'] = add
         self.data['del'] = delete
+    def accept_add_del(self, should_save=True):
+        if not ('add' in self.data or 'del' in self.data):
+            return []
+        changes = []
+        for blob in self.data['cmds']:
+            for a in self.data['add']:
+                if a not in blob['expect']:
+                    blob['expect'][a] = [0, blob['output'][a][1]]
+                    changes.append(a)
+                    self.unsaved.add(blob['cmd'])
+            for d in self.data['del']:
+                if d in blob['expect']:
+                    del blob['expect'][d]
+                    changes.append(d)
+                    self.unsaved.add(blob['cmd'])
+        if should_save:
+            self.save()
+        self.data['add'] = []
+        self.data['del'] = []
+        return list(set(changes))
+    def accept(self, hashes=None, last_step=None):
+        if 'cmds' not in self.data:
+            return []
+        changes = self.accept_add_del(False)
+        for blob in self.data['cmds']:
+            for h in (hashes or blob['expect'].keys()):
+                if blob['expect'][h][1] != blob['output'][h][1]:
+                    blob['expect'][h][1] = blob['output'][h][1]
+                    changes.append(h)
+                    self.unsaved.add(blob['cmd'])
+            if blob['cmd'] == last_step:
+                break
+        self.save()
+        return list(set(changes))
+    def set_gold(self, hsh, vals, step=None):
+        idx = -1
+        if step:
+            for i, blob in enumerate(self.data['cmds']):
+                if blob['cmd'] == step:
+                    idx = i
+                    break
+        self.data['cmds'][idx]['gold'][hsh] = vals
+        save_gold(self.gold_name(self.data['cmds'][idx]['cmd']),
+                  self.data['cmds'][idx]['gold'])
 
 def load_corpora():
     if not os.path.isdir('test') or not os.path.isfile('test/tests.json'):
@@ -342,8 +428,29 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             good, output = test_run(params.get('c', ['*']))
             resp['good'] = good
             resp['output'] = output
+        elif params['a'][0] == 'accept-nd':
+            # TODO: error checking
+            resp['c'] = params['c'][0]
+            resp['hs'] = Corpus.all_corpora[resp['c']].accept_add_del()
+        elif params['a'][0] == 'accept':
+            resp['c'] = params['c'][0]
+            s = params.get('s', [None])[0]
+            hs = []
+            if 'hs' in params:
+                hs = params['hs'][0].split(';')
+            resp['hs'] = Corpus.all_corpora[resp['c']].accept(hs, s)
+        elif params['a'][0] == 'gold':
+            corp = params['c'][0]
+            hsh = params['h'][0]
+            golds = json.loads(params['gs'][0])
+            stp = None
+            if 's' in params:
+                stp = params['s'][0]
+            Corpus.all_corpora[corp].set_gold(hsh, golds, stp)
+            resp = {'c': corp, 'hs': [hsh]}
         else:
             resp['error'] = 'unknown value for parameter a'
+        print(resp)
 
         rstr = json.dumps(resp).encode('utf-8')
         self.send_response(status)

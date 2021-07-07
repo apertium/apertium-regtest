@@ -243,8 +243,9 @@ function btn_gold_add() {
 	let c = tr.attr('data-corp');
 	let h = tr.attr('data-hash');
 	let gs = [];
-	if (state[c].gold.hasOwnProperty(h)) {
-		gs = state[c].gold[h][1];
+    let gold = state[c].cmds[state[c].cmds.length-1].gold;
+	if (gold.hasOwnProperty(h)) {
+		gs = gold[h];
 	}
 	gs.push(tr.find('pre.rt-last-tab').attr('data-output'));
 	let tid = toast('Adding Gold', 'Corpus '+c+' sentence '+h);
@@ -534,7 +535,7 @@ function cb_load(rv) {
 
 		let cmds = state[c].cmds;
 		let ins = state[c].inputs;
-		let golds = state[c].gold;
+		let golds = cmds[cmds.length-1].gold; // TODO: use per-step
 		let outs = cmds[0].expect;
 		let add = state[c].add;
 		let del = state[c].del;
@@ -606,7 +607,7 @@ function cb_load(rv) {
 					style += ' rt-changed';
 					changed = true;
 					if (i == cmds.length-1) {
-						if (golds.hasOwnProperty(k) && golds[k][1].indexOf(cmd.output[k][1]) !== -1) {
+						if (golds.hasOwnProperty(k) && golds[k].indexOf(cmd.output[k][1]) !== -1) {
 							style += ' rt-gold';
 						}
 						else {
@@ -643,8 +644,8 @@ function cb_load(rv) {
 			if (golds.hasOwnProperty(k)) {
 				let id = c+'-'+k+'-gold';
 				let ul = 'Input:<p class="ml-4">'+esc_html(ins[k][1])+'</p>Golds:<ul class="list-group">';
-				for (let g=0 ; g<golds[k][1].length ; ++g) {
-					ul += '<li class="list-group-item">'+esc_html(golds[k][1][g])+'</li>';
+				for (let g=0 ; g<golds[k].length ; ++g) {
+					ul += '<li class="list-group-item">'+esc_html(golds[k][g])+'</li>';
 				}
 				ul += '</ul>';
 				nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-gold" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab">Gold</a></li>';
