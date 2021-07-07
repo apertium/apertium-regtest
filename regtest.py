@@ -9,6 +9,7 @@ import http.server
 import json
 import math
 import os
+import re
 import shlex
 import socketserver
 import subprocess
@@ -20,33 +21,34 @@ import zlib
 def hash_line(s):
     return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'-_')[:12].decode('utf-8')
 
-def load_input(fname, sep='\n'):
+def load_input(fname):
     with open(fname, 'r') as fin:
-        lines = fin.read().split(sep)
+        lines = fin.read().splitlines()
         ret = {}
         for i, l_ in enumerate(lines):
-            l = l_.strip()
+            # TODO: more careful escape handling
+            l = l_.split('#')[0].replace('\\n', '\n').strip()
             if not l:
                 continue
             ret[hash_line(l)] = [i, l]
         return ret
 
-def load_output(fname, sep='\n'):
+# [hash#line] content [/hash]
+txt_out_format = re.compile(r'\[([A-Za-z0-9_-]+)#(\d+)\](.*)\[/\1\]', re.DOTALL)
+# [hash] content [/hash]
+txt_gold_format = re.compile(r'\[([A-Za-z0-9_-]+)\](.*)\[/\1\]', re.DOTALL)
+
+def load_output(fname):
     try:
         with open(fname, 'r') as fin:
-            lines = fin.read().split(sep)
             ret = {}
-            for l_ in lines:
-                l = l_.strip()
-                if not l or l[0] != '[':
-                    continue
-                ident, content = l[1:].split(']', 1)
-                content = content.strip()
-                hsh, linenum = ident.split('#')
+            txt = fin.read().replace('\0', '')
+            for hsh, line, content_ in txt_out_format.findall(txt):
+                content = content_.strip()
                 if not content:
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
                     sys.exit(1)
-                ret[hsh] = [int(linenum), content]
+                ret[hsh] = [int(line), content]
             return ret
     except FileNotFoundError:
         return {}
@@ -54,23 +56,22 @@ def load_output(fname, sep='\n'):
 def save_output(fname, data, sep='\n'):
     with open(fname, 'w') as fout:
         for inhash in sorted(data.keys()):
-            fout.write('[%s#0] %s%s' % (inhash, data[inhash][1], sep))
+            fout.write('[%s#0] %s\n[/%s]\n' % (inhash, data[inhash][1], inhash))
 
-def load_gold(fname, sep='\n'):
+def load_gold(fname):
     try:
         with open(fname, 'r') as fin:
-            lines = fin.read().split(sep)
-            ret = defaultdict(list)
-            for l_ in lines:
-                l = l_.strip()
-                if not l or l[0] != '[':
-                    continue
-                ident, content = l[1:].split(']', 1)
-                content = content.strip()
-                if not content:
+            ret = {}
+            for hsh, content in txt_gold_format.findall(fin.read()):
+                opts = []
+                for o in content.split('[/option]'):
+                    o2 = o.strip()
+                    if o2:
+                        opts.append(o2)
+                if not opts:
                     print('ERROR: Empty entry %s in %s' % (ident, fname))
                     sys.exit(1)
-                ret[ident].append(content)
+                ret[hsh].append(opts)
             return ret
     except FileNotFoundError:
         return {}
@@ -78,8 +79,10 @@ def load_gold(fname, sep='\n'):
 def save_gold(fname, data, sep='\n'):
     with open(fname, 'w') as fout:
         for inhash in sorted(data.keys()):
+            fout.write('[%s]\n' % inhash)
             for ln in sorted(data[inhash]):
-                fout.write('[%s] %s%s' % (inhash, ln, sep))
+                fout.write('%s [/option]\n' % ln)
+            fout.write('[/%s]\n' % inhash)
 
 class Step:
     prognames = {
@@ -120,30 +123,24 @@ class Step:
                 for op in Step.morphmodes:
                     if op in self.args:
                         self.name = Step.morphmodes[op]
-    def run(self, in_name, out_name, sep='\n', first=False):
+    def run(self, in_name, out_name, first=False):
         cmd = [self.prog] + self.args
         print('running', cmd)
         if self.prog in Step.prognames or self.prog in ['lt-proc', 'hfst-proc']:
             cmd.append('-z')
         with open(in_name, 'r') as fin:
             if first:
+                data = load_input(in_name)
                 txt = ''
-                lines = fin.read().split(sep)
-                for i, l in enumerate(lines):
-                    s = l.strip()
-                    if not s:
-                        continue
-                    h = hash_line(s)
-                    # TODO: separator?
-                    txt += '[%s#%s] %s\n\0' % (h, i, s)
+                for hsh, (line, content) in data.items():
+                    txt += '[%s#%s] %s\n[/%s]\n\0' % (hsh, line, content, hsh)
             else:
-                txt = fin.read().replace(sep, sep+'\0')
+                txt = fin.read()
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE)
             stdout, stderr = proc.communicate(txt.encode('utf-8'))
-            with open(out_name, 'w') as fout:
-                for line in stdout.decode('utf-8').split('\0'):
-                    fout.write(line.strip() + '\n')
+            with open(out_name, 'wb') as fout:
+                fout.write(stdout)
 
 class Mode:
     all_modes = {}
