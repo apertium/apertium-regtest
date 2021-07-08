@@ -239,6 +239,8 @@ class Corpus:
         self.data = {}
         self.loaded = False
         self.unsaved = set()
+        self.commands = {}
+        self.hashes = []
         Corpus.all_corpora[name] = self
     def run(self):
         Mode.all_modes[self.mode].run(self.name, self.infile)
@@ -258,6 +260,8 @@ class Corpus:
         if self.loaded:
             return
         ins = load_input(self.infile)
+        self.hashes = list(ins.keys())
+        self.hashes.sort(key = lambda x: ins[x][0])
         outs = []
         cmds = Mode.all_modes[self.mode].get_commands()
         self.data = {
@@ -265,7 +269,9 @@ class Corpus:
             'cmds': [],
             'count': len(ins)
         }
-        for c in cmds:
+        self.commands = {}
+        for i, c in enumerate(cmds):
+            self.commands[c] = i
             expfile = self.exp_name(c)
             outdata = load_output(self.out_name(c))
             expdata = {}
@@ -295,6 +301,8 @@ class Corpus:
         delete.sort()
         self.data['add'] = add
         self.data['del'] = delete
+    def step(self, s):
+        return self.data['cmds'][self.commands.get(s, -1)]
     def get_changed_hashes(self):
         # TODO: non-final changes
         blob = self.data['cmds'][-1]
@@ -310,6 +318,30 @@ class Corpus:
             ret.append(hsh)
         ret.sort(key = lambda x: blob['output'][hsh][0])
         return ret
+    def display_line(self, hsh, step=None):
+        # TODO: colors, diffs
+        def indent(s):
+            print('  ' + s.replace('\n', '\n  '))
+        blob = self.step(step)
+        if hsh in self.data['inputs']:
+            print('%s %s of %s' % (self.name, self.hashes.index(hsh)+1, len(self.hashes)))
+            print('INPUT:')
+            indent(self.data['inputs'][hsh][1])
+        else:
+            print(self.name)
+            print('INPUT: [sentence deleted from input corpus]')
+        if hsh in blob['expect']:
+            print('EXPECTED OUTPUT:')
+            indent(blob['expect'][hsh][1])
+        else:
+            print('EXPECTED OUTPUT: [sentence added since last run]')
+        if hsh in blob['output']:
+            print('ACTUAL OUTPUT:')
+            indent(blob['output'][hsh][1])
+        if hsh in blob['gold']:
+            print('IDEAL OUTPUTS:')
+            for g in blob['gold'][hsh]:
+                indent(g)
     def accept_add_del(self, should_save=True):
         if not ('add' in self.data or 'del' in self.data):
             return []
@@ -325,6 +357,8 @@ class Corpus:
                     del blob['expect'][d]
                     changes.append(d)
                     self.unsaved.add(blob['cmd'])
+                if d in blob['gold']:
+                    del blob['gold'][d]
         if should_save:
             self.save()
         self.data['add'] = []
@@ -345,15 +379,9 @@ class Corpus:
         self.save()
         return list(set(changes))
     def set_gold(self, hsh, vals, step=None):
-        idx = -1
-        if step:
-            for i, blob in enumerate(self.data['cmds']):
-                if blob['cmd'] == step:
-                    idx = i
-                    break
-        self.data['cmds'][idx]['gold'][hsh] = vals
-        save_gold(self.gold_name(self.data['cmds'][idx]['cmd']),
-                  self.data['cmds'][idx]['gold'])
+        blob = self.step(step)
+        blob['gold'][hsh] = vals
+        save_gold(self.gold_name(blob['cmd']), blob['gold'])
 
 def load_corpora():
     if not os.path.isdir('test') or not os.path.isfile('test/tests.json'):
@@ -481,28 +509,43 @@ class RegtestShell(cmd.Cmd):
     corpus_filter = None
     current_corpus = None
     current_hash = None
-    def __init__(self):
+    end_step = None
+    show_step = None
+    def __init__(self, autosave=True):
+        print('\nRunning regression tests for %s' % os.path.basename(os.getcwd()))
+        print('Type `help` for a list of available commands.\n')
+        print('Loading corpora...')
         for k in sorted(Corpus.all_corpora.keys()):
             self.load_corpus(k)
+        self.autosave = autosave
+        self.next_hash()
         super().__init__()
     def load_corpus(self, name):
         corp = Corpus.all_corpora[name]
         corp.load()
         self.lines_todo[name] = []
         if corp.data['add'] or corp.data['del']:
-            print('Corpus %s has %s added lines and %s deleted lines since last run')
-            if yes_no('Save changes?'):
+            print('Corpus %s has %s added lines and %s deleted lines since last run' % (name, len(corp.data['add']), len(corp.data['del'])))
+            if yes_no('Run test and save changes?'):
+                corp.run()
+                corp.load()
                 corp.accept_add_del()
             else:
                 self.lines_todo[name] = corp.data['add'] + corp.data['del']
         self.lines_todo[name] += corp.get_changed_hashes()
         print('Corpus %s has %s lines to be examined.' % (name, len(self.lines_todo[name])))
-    def next_hash(self, drop_prev=True):
+    def next_hash(self, drop_prev=False):
         if drop_prev and self.current_corpus in self.lines_todo:
             if self.current_hash in self.lines_todo[self.current_corpus]:
                 self.lines_todo[self.current_corpus].remove(self.current_hash)
                 if not self.lines_todo[self.current_corpus]:
                     del self.lines_todo[self.current_corpus]
+        drop = []
+        for k, l in self.lines_todo.items():
+            if len(l) == 0:
+                drop.append(k)
+        for k in drop:
+            del self.lines_todo[k]
         if self.corpus_filter:
             self.current_corpus = self.corpus_filter
         elif not self.current_corpus and len(self.lines_todo) > 0:
@@ -511,7 +554,86 @@ class RegtestShell(cmd.Cmd):
             self.current_hash = None
         else:
             self.current_hash = self.lines_todo[self.current_corpus][0]
+            self.do_show('')
+    def do_s(self, arg):
+        'Synonym for `show`'
+        self.do_show(arg)
+    def do_show(self, arg):
+        '''Display the selected step of the current line.
+`show [step]`  - Display step `step` of the current line.
+`show`         - Display the default step of the current line.
+If the default display step has not been set, the final step
+will be used. Invoking this command with an argument also sets
+the default display step.'''
+        if self.current_corpus and self.current_hash:
+            corp = Corpus.all_corpora[self.current_corpus]
+            if arg:
+                self.show_step = arg
+            corp.display_line(self.current_hash, self.show_step)
+        elif self.corpus_filter and len(self.lines_todo) > 0:
+            print('No changed lines match current filter')
+            print("Use 'filter' to change filter or 'quit' to exit")
+        else:
+            print('No more changed lines')
+            print("Use 'run' to update tests or 'quit' to exit")
+    def complete_show(self, text, line, begidx, endidx):
+        ret = []
+        if self.current_corpus in Corpus.all_corpora:
+            corp = Corpus.all_corpora[self.current_corpus]
+            for cmd in corp.commands:
+                if cmd.startswith(text):
+                    ret.append(cmd)
+        return ret
+    def do_a(self, arg):
+        'Synonym for `accept`'
+        self.do_accept('')
+    def do_accept(self, arg):
+        '''Accept the outputs of the current line and replace the expected outputs.
+If `upto` has been called, this will not affect steps after the limit.
+Abbreviated form: `a`'''
+        if self.current_corpus and self.current_hash:
+            self.lines_accepted[self.current_corpus].append(self.current_hash)
+        self.next_hash(True)
+    def do_ag(self, arg):
+        'Synonym for `addgold`'
+        self.do_addgold('')
+    def do_addgold(self, arg):
+        '''Add the output for the currently displayed step of the current line
+to the list of ideal outputs for that line.
+This command also runs `accept`.
+Abbreviated form: `ag`'''
+        if self.current_corpus and self.current_hash:
+            corp = Corpus.all_corpora[self.current_corpus]
+            blob = corp.step(self.show_step)
+            out = blob['output'][self.current_hash][1]
+            gold = blob['gold'].get(self.current_hash, [])
+            corp.set_gold(self.current_hash, gold + [out], self.show_step)
+            self.do_accept('')
+        else:
+            print('No input selected')
+    def do_rg(self, arg):
+        'Synonym for `replacegold`'
+        self.do_replacegold('')
+    def do_replacegold(self, arg):
+        '''Remove the list of ideal outputs for the current step of the current
+line and replace them with the current output.
+This command also runs `accept`.
+Abbreviated form: `rg`'''
+        if self.current_corpus and self.current_hash:
+            corp = Corpus.all_corpora[self.current_corpus]
+            out = corp.step(self.show_step)['output'][self.current_hash][1]
+            corp.set_gold(self.current_hash, [out], self.show_step)
+            self.do_accept('')
+        else:
+            print('No input selected')
+    def do_r(self, arg):
+        'Synonym for `run`'
+        self.do_run(arg)
     def do_run(self, corpus):
+        '''Run tests and display results
+`run`         - Run tests for all corpora.
+`run [name]`  - Run tests only for corpus `name`.
+Abbreviated form: `r`'''
         if corpus == '*' or corpus == '':
             for name, corp in Corpus.all_corpora.items():
                 print('Running %s' % name)
@@ -525,47 +647,63 @@ class RegtestShell(cmd.Cmd):
                     self.load_corpus(name)
                 else:
                     print("Corpus '%s' does not exist" % name)
+        self.next_hash()
     def complete_run(self, text, line, begidx, endidx):
         ls = []
         for c in Corpus.all_corpora:
             if c.startswith(text):
                 ls.append(c)
         return ls
+    def do_v(self, arg):
+        'Synonym for `save`'
+        self.do_save('')
     def do_save(self, arg):
+        '''Save all pending changes to expected output.
+This is automatically run by `quit` unless apertium-regtest was
+invoked with `--no-autosave`.
+Abbreviated form: `v`'''
         for name in sorted(Corpus.all_corpora.keys()):
             corp = Corpus.all_corpora[name]
             if name in self.lines_accepted:
-                print('Saving changes to %s' % name)
-                corp.accept(self.lines_accepted[name])
+                s = ''
+                if self.end_step:
+                    s = ' through step %s' % self.end_step
+                print('Saving changes to %s%s' % (name, s))
+                corp.accept(self.lines_accepted[name], self.end_step)
                 del self.lines_accepted[name]
             elif len(corp.unsaved) > 0:
                 print('Saving changes to %s' % name)
                 corp.save()
-    def do_EOF(self, arg):
-        print('')
-        sys.exit(0)
-
-def get_command(options):
-    def get(s):
-        nonlocal options
-        cmd = s.strip().lower()
-        if 'help'.startswith(cmd):
-            return 'help'
-        for c in options:
-            if c.startswith(cmd):
-                return c
-        return ''
-    while True:
-        cmd = get(input('> '))
-        if cmd == '':
-            print("Unknown command.")
-            print("Type 'help' for a list of available commands.")
-        elif cmd == 'help':
-            print('Available commands:')
-            for c in sorted(options.keys()):
-                print('  %s / %s - %s' % (c[0], c, options[c]))
+    def do_upto(self, arg):
+        '''Disregard changes after a particular step.
+When `save` is run, no steps after the last value passed to `upto`
+will be updated. Calling without arguments will select the final step.
+If the default display step is after the new limit step, the default
+display step will be set to the new limit step.'''
+        if not arg:
+            self.end_step = None
         else:
-            return cmd
+            self.end_step = arg
+            if self.current_corpus:
+                cmd = Corpus.all_corpora[self.current_corpus].commands
+                if cmd.get(self.end_step, 0) > cmd.get(self.show_step, len(cmd)):
+                    self.show_step = self.end_step
+    def complete_upto(self, *args):
+        return self.complete_show(*args)
+    def do_q(self, arg):
+        'Synonym for `quit`'
+        return self.do_quit('')
+    def do_quit(self, arg):
+        '''Exit the program.
+This will run `save` unless apertium-regtest was invoked with `--no-autosave`.
+Abbreviated form: `q`'''
+        if self.autosave:
+            self.do_save('')
+        return True
+    def do_EOF(self, arg):
+        'Synonym for `quit` provided so that CTRL-D will work as expected.'
+        print('')
+        return self.do_quit('')
 
 if __name__ == '__main__':
     load_modes()
@@ -584,6 +722,8 @@ apertium-regtest has 3 modes available:
   - 'cli'  interactively updates tests from the terminal.
 ''')
     parser.add_argument('mode', choices=['test', 'web', 'cli'])
+    parser.add_argument('--no-autosave', action='store_false', dest='autosave',
+                        help="in cli mode, don't automatically save pending changes upon exiting")
     args = parser.parse_args()
     if args.mode == 'test':
         n = len(Corpus.all_corpora.items())
@@ -619,7 +759,7 @@ apertium-regtest has 3 modes available:
     elif args.mode == 'web':
         start_server()
     elif args.mode == 'cli':
-        RegtestShell().cmdloop()
+        RegtestShell(args.autosave).cmdloop()
     else:
         print("Unknown operation mode. Expected 'test', 'web', or 'cli'.")
         sys.exit(1)
