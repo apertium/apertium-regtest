@@ -71,7 +71,7 @@ def load_gold(fname):
                 if not opts:
                     print('ERROR: Empty entry %s in %s' % (ident, fname))
                     sys.exit(1)
-                ret[hsh].append(opts)
+                ret[hsh] = opts
             return ret
     except FileNotFoundError:
         return {}
@@ -125,7 +125,6 @@ class Step:
                         self.name = Step.morphmodes[op]
     def run(self, in_name, out_name, first=False):
         cmd = [self.prog] + self.args
-        print('running', cmd)
         if self.prog in Step.prognames or self.prog in ['lt-proc', 'hfst-proc']:
             cmd.append('-z')
         with open(in_name, 'r') as fin:
@@ -154,7 +153,6 @@ class Mode:
                 s.name += str(nm[s.name])
         Mode.all_modes[self.name] = self
     def run(self, corpusname, filename):
-        print('run(%s, %s)' % (corpusname, filename))
         fin = filename
         for i, step in enumerate(self.steps):
             fout = 'test/%s-%s-output.txt' % (corpusname, step.name)
@@ -400,7 +398,6 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.do_callback(urllib.parse.parse_qs(data.decode('utf-8')))
 
     def do_callback(self, params):
-        print(params)
         if 'a' not in params:
             resp = 'Parameter a must be passed!'
             self.send_response(HTTPStatus.OK)
@@ -447,7 +444,6 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             resp = {'c': corp, 'hs': [hsh]}
         else:
             resp['error'] = 'unknown value for parameter a'
-        print(resp)
 
         rstr = json.dumps(resp).encode('utf-8')
         self.send_response(status)
@@ -465,4 +461,56 @@ def start_server():
 if __name__ == '__main__':
     load_modes()
     load_corpora()
-    start_server()
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog='apertium-regtest',
+        description='Run and update regression tests for Apertium data repositories',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+apertium-regtest has 3 modes available:
+  - 'test' runs all tests, printing a report and setting the exit code
+           if any failed. This is primarily intended for 'make test' recipes.
+  - 'web'  starts a local webserver so that tests can be interactively
+           updated from the browser.
+  - 'cli'  interactively updates tests from the terminal.
+''')
+    parser.add_argument('mode', choices=['test', 'web', 'cli'])
+    args = parser.parse_args()
+    if args.mode == 'test':
+        n = len(Corpus.all_corpora.items())
+        changed = False
+        for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
+            print('Corpus %s of %s: %s' % (i, n, name))
+            corp.load()
+            corp.run()
+            if corp.data['add']:
+                print('  %s lines added since last run' % len(corp.data['add']))
+                changed = True
+            if corp.data['del']:
+                print('  %s lines removed since last run' % len(corp.data['del']))
+                changed = True
+            data = corp.data['cmds'][-1]
+            total = 0
+            same = 0
+            for key, out in data['output'].items():
+                if key in corp.data['add']:
+                    continue
+                exp = data['expect'].get(key, [0, ''])[1]
+                golds = data['gold'].get(key, [])
+                total += 1
+                if out[1] == exp or out[1] in golds:
+                    same += 1
+            print('  %s/%s (%s%%) lines match expected value' % (same, total, round(100.0*same/total, 2)))
+            if same != total:
+                changed = True
+            print('')
+        if changed:
+            print('There were changes! Rerun in interactive mode to update tests.')
+            sys.exit(1)
+    elif args.mode == 'web':
+        start_server()
+    elif args.mode == 'cli':
+        pass
+    else:
+        print("Unknown operation mode. Expected 'test', 'web', or 'cli'.")
+        sys.exit(1)
