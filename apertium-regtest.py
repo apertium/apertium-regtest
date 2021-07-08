@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import base64
+import cmd
 from collections import defaultdict
 from functools import partial
 import hashlib
@@ -294,6 +295,21 @@ class Corpus:
         delete.sort()
         self.data['add'] = add
         self.data['del'] = delete
+    def get_changed_hashes(self):
+        # TODO: non-final changes
+        blob = self.data['cmds'][-1]
+        ret = []
+        for hsh in blob['output']:
+            if hsh not in blob['expect']:
+                continue
+            if blob['output'][hsh][1] == blob['expect'][hsh][1]:
+                continue
+            if hsh in blob['gold']:
+                if blob['output'][hsh][1] in blob['gold'][hsh]:
+                    continue
+            ret.append(hsh)
+        ret.sort(key = lambda x: blob['output'][hsh][0])
+        return ret
     def accept_add_del(self, should_save=True):
         if not ('add' in self.data or 'del' in self.data):
             return []
@@ -458,6 +474,99 @@ def start_server():
     with socketserver.TCPServer(('', 3000), handle) as httpd:
    	    httpd.serve_forever()
 
+class RegtestShell(cmd.Cmd):
+    prompt = '> '
+    lines_todo = defaultdict(list) # { corpus_name : [ hash, hash, ... ] }
+    lines_accepted = defaultdict(list)
+    corpus_filter = None
+    current_corpus = None
+    current_hash = None
+    def __init__(self):
+        for k in sorted(Corpus.all_corpora.keys()):
+            self.load_corpus(k)
+        super().__init__()
+    def load_corpus(self, name):
+        corp = Corpus.all_corpora[name]
+        corp.load()
+        self.lines_todo[name] = []
+        if corp.data['add'] or corp.data['del']:
+            print('Corpus %s has %s added lines and %s deleted lines since last run')
+            if yes_no('Save changes?'):
+                corp.accept_add_del()
+            else:
+                self.lines_todo[name] = corp.data['add'] + corp.data['del']
+        self.lines_todo[name] += corp.get_changed_hashes()
+        print('Corpus %s has %s lines to be examined.' % (name, len(self.lines_todo[name])))
+    def next_hash(self, drop_prev=True):
+        if drop_prev and self.current_corpus in self.lines_todo:
+            if self.current_hash in self.lines_todo[self.current_corpus]:
+                self.lines_todo[self.current_corpus].remove(self.current_hash)
+                if not self.lines_todo[self.current_corpus]:
+                    del self.lines_todo[self.current_corpus]
+        if self.corpus_filter:
+            self.current_corpus = self.corpus_filter
+        elif not self.current_corpus and len(self.lines_todo) > 0:
+            self.current_corpus = list(sorted(self.lines_todo.keys()))[0]
+        if self.current_corpus not in self.lines_todo:
+            self.current_hash = None
+        else:
+            self.current_hash = self.lines_todo[self.current_corpus][0]
+    def do_run(self, corpus):
+        if corpus == '*' or corpus == '':
+            for name, corp in Corpus.all_corpora.items():
+                print('Running %s' % name)
+                corp.run()
+                self.load_corpus(name)
+        else:
+            for name in corpus.split():
+                if name in Corpus.all_corpora:
+                    print('Running %s' % name)
+                    Corpus.all_corpora[name].run()
+                    self.load_corpus(name)
+                else:
+                    print("Corpus '%s' does not exist" % name)
+    def complete_run(self, text, line, begidx, endidx):
+        ls = []
+        for c in Corpus.all_corpora:
+            if c.startswith(text):
+                ls.append(c)
+        return ls
+    def do_save(self, arg):
+        for name in sorted(Corpus.all_corpora.keys()):
+            corp = Corpus.all_corpora[name]
+            if name in self.lines_accepted:
+                print('Saving changes to %s' % name)
+                corp.accept(self.lines_accepted[name])
+                del self.lines_accepted[name]
+            elif len(corp.unsaved) > 0:
+                print('Saving changes to %s' % name)
+                corp.save()
+    def do_EOF(self, arg):
+        print('')
+        sys.exit(0)
+
+def get_command(options):
+    def get(s):
+        nonlocal options
+        cmd = s.strip().lower()
+        if 'help'.startswith(cmd):
+            return 'help'
+        for c in options:
+            if c.startswith(cmd):
+                return c
+        return ''
+    while True:
+        cmd = get(input('> '))
+        if cmd == '':
+            print("Unknown command.")
+            print("Type 'help' for a list of available commands.")
+        elif cmd == 'help':
+            print('Available commands:')
+            for c in sorted(options.keys()):
+                print('  %s / %s - %s' % (c[0], c, options[c]))
+        else:
+            return cmd
+
 if __name__ == '__main__':
     load_modes()
     load_corpora()
@@ -510,7 +619,7 @@ apertium-regtest has 3 modes available:
     elif args.mode == 'web':
         start_server()
     elif args.mode == 'cli':
-        pass
+        RegtestShell().cmdloop()
     else:
         print("Unknown operation mode. Expected 'test', 'web', or 'cli'.")
         sys.exit(1)
