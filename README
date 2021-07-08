@@ -1,0 +1,24 @@
+apertium-regtest
+----------------
+
+Regression testing system for Apertium.
+
+# Installation
+
+Can be run as-is by invoking the `apertium-regtest.py` file in this directory or by running
+
+```bash
+$ autoreconf -fvi
+$ ./configure
+# make install
+```
+
+Which will install it as the command `apertium-regtest`
+
+# Usage
+
+## Static testing
+`apertium-regtest test` runs all tests and reports the results, exiting with error code `0` if all pass and `1` otherwise.
+
+## Interactively updating tests
+Test data can be updated either from a browser or from a terminal. For browser mode, run `apertium-regtest web` and for terminal `apertium-regtest cli`.

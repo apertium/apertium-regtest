@@ -1,0 +1,7 @@
+prefix=@prefix@
+exec_prefix=${prefix}
+srcdir=@datarootdir@/apertium-regtest
+
+Name: apertium-regtest
+Description: Regression test runner for Apertium language data
+Version: @VERSION@
