@@ -92,7 +92,7 @@ def save_gold(fname, data):
     with open(fname, 'w') as fout:
         for inhash in sorted(data.keys()):
             fout.write('[%s]\n' % inhash)
-            for ln in sorted(data[inhash]):
+            for ln in sorted(set(data[inhash])):
                 fout.write('%s [/option]\n' % ln)
             fout.write('[/%s]\n' % inhash)
 
@@ -553,7 +553,11 @@ def start_server(port):
     print('Starting server')
     print('Open http://localhost:%d in your browser' % port)
     with socketserver.TCPServer(('', port), handle) as httpd:
-   	    httpd.serve_forever()
+        try:
+   	        httpd.serve_forever()
+        except KeyboardInterrupt:
+            print('')
+            sys.exit(0)
 
 class RegtestShell(cmd.Cmd):
     prompt = '> '

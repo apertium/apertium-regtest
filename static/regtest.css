@@ -57,8 +57,19 @@ pre {
 	font-weight: bold;
 }
 .rt-input {
+	font-size: 11px;
 	font-style: italic;
-	margin-bottom: 1ex;
+	margin: 1ex;
+}
+
+ul.rt-gold {
+	margin-top: 1ex;
+}
+
+ul.rt-gold:before {
+    content: "Golds: ";
+    font-style: normal;
+    font-weight: bold;
 }
 
 .rt-count {

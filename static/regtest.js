@@ -233,23 +233,25 @@ function btn_gold_replace() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
 	let h = tr.attr('data-hash');
-	let gs = [tr.find('pre.rt-last-tab').attr('data-output')];
-	let tid = toast('Replacing Gold', 'Corpus '+c+' sentence '+h);
-	post({a: 'gold', c: c, h: h, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
+    let s = tr.find('.nav-link.active').text();
+    let gs = [tr.find('.rt-output.active').attr('data-output')];
+	let tid = toast('Replacing Gold', 'Corpus '+c+' sentence '+h+' step '+s);
+	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
 }
 
 function btn_gold_add() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
 	let h = tr.attr('data-hash');
+    let s = tr.find('.nav-link.active').text();
 	let gs = [];
     let gold = state[c].cmds[state[c].cmds.length-1].gold;
 	if (gold.hasOwnProperty(h)) {
 		gs = gold[h];
 	}
-	gs.push(tr.find('pre.rt-last-tab').attr('data-output'));
-	let tid = toast('Adding Gold', 'Corpus '+c+' sentence '+h);
-	post({a: 'gold', c: c, h: h, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
+	gs.push(tr.find('.rt-output.active').attr('data-output'));
+	let tid = toast('Adding Gold', 'Corpus '+c+' sentence '+h+' step '+s);
+	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
 }
 
 function btn_accept() {
@@ -372,13 +374,10 @@ function btn_show_tab() {
 	let div = $($(this).attr('href'));
 
 	let type = div.attr('data-type');
-	let text = div.text();
+	let text = div.attr('data-output');
 	let expect = div.attr('data-expect');
 
-	if ($(this).hasClass('rt-tab-gold')) {
-		// Nothing
-	}
-	else if (expect) {
+	if (expect) {
 		let diff = Diff.diffWordsWithSpace(expect, text);
 		let output = '';
 		for (let d=0 ; d<diff.length ; ++d) {
@@ -402,20 +401,14 @@ function btn_show_tab() {
 				output += val;
 			}
 		}
-		div.html(output);
+        $(div).find('pre').html(output);
 		div.removeAttr('data-expect');
 		div.find('.rt-expanded').hide();
 		div.find('.btnExpand').off().click(btn_expand);
 		div.find('.btnCollapse').off().click(btn_collapse).hide();
 	}
 	else {
-		div.html(hilite_output(esc_html(text), type));
-	}
-
-	if ($(this).hasClass('rt-last-tab')) {
-		let input = div.attr('id').substr(0, div.attr('id').lastIndexOf('-'));
-		input = $('#'+input+'-input');
-		div.prepend('<div class="rt-input">'+esc_html(input.text())+'</div>');
+		$(div).find('pre').html(hilite_output(esc_html(text), type));
 	}
 
 	$(this).attr('data-hilite', true);
@@ -535,7 +528,6 @@ function cb_load(rv) {
 
 		let cmds = state[c].cmds;
 		let ins = state[c].inputs;
-		let golds = cmds[cmds.length-1].gold; // TODO: use per-step
 		let outs = cmds[0].expect;
 		let add = state[c].add;
 		let del = state[c].del;
@@ -584,8 +576,7 @@ function cb_load(rv) {
 			let body = '<div class="tab-content">';
 
 			let id = c+'-'+k+'-input';
-			nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-input" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab" title="'+esc_html(ins[k][1])+'">Input</a></li>';
-			body += '<pre class="tab-pane rt-output p-1" id="'+id+'" role="tabpanel">'+esc_html(ins[k][1])+'</pre>';
+            body += '<pre class="rt-input">'+esc_html(ins[k][1])+'</pre>';
 
 			for (let i=0 ; i<cmds.length ; ++i) {
 				let cmd = cmds[i];
@@ -606,14 +597,8 @@ function cb_load(rv) {
 					}
 					style += ' rt-changed';
 					changed = true;
-					if (i == cmds.length-1) {
-						if (golds.hasOwnProperty(k) && golds[k].indexOf(cmd.output[k][1]) !== -1) {
-							style += ' rt-gold';
-						}
-						else {
-							changed_result = ' rt-changed-result';
-							bucket = 'changed_end';
-						}
+                    if (cmd.gold.hasOwnProperty(k) && cmd.gold[k].indexOf(cmd.output[k][1]) != -1) {
+						style += ' rt-gold';
 					}
 
 					expect = ' data-expect="'+esc_html(cmd.expect[k][1])+'"';
@@ -632,24 +617,23 @@ function cb_load(rv) {
 
 				let id = c+'-'+k+'-'+cmd.opt;
 				nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-'+cmd.opt+style+'" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab">'+cmd.opt+'</a></li>';
-				body += '<pre class="tab-pane'+style+' rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'"'+expect+' data-output="'+output+'">'+output+'</pre>';
+				body += '<div class="tab-pane'+style+' rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'"'+expect+' data-output="'+output+'"><pre>'+output+'</pre>';
+
+                if (cmd.gold.hasOwnProperty(k)) {
+                    let ul = '<ul class="list-group rt-gold">';
+                    for (let g = 0; g < cmd.gold[k].length; g++) {
+                        ul += '<li class="list-group-item">'+esc_html(cmd.gold[k][g])+'</li>';
+                    }
+                    ul += '</ul>';
+                    body += ul;
+                }
+                body += '</div>';
 
 				if (cmd.trace.hasOwnProperty(k)) {
 					let id = c+'-'+k+'-'+cmd.opt+'-trace';
 					nav += '<li class="nav-item"><a tabindex="-1" class="nav-link" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab">-trace</a></li>';
 					body += '<pre class="tab-pane rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'">'+esc_html(cmd.trace[k][1])+'</pre>';
 				}
-			}
-
-			if (golds.hasOwnProperty(k)) {
-				let id = c+'-'+k+'-gold';
-				let ul = 'Input:<p class="ml-4">'+esc_html(ins[k][1])+'</p>Golds:<ul class="list-group">';
-				for (let g=0 ; g<golds[k].length ; ++g) {
-					ul += '<li class="list-group-item">'+esc_html(golds[k][g])+'</li>';
-				}
-				ul += '</ul>';
-				nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-gold" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab">Gold</a></li>';
-				body += '<pre class="tab-pane rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmds[cmds.length-1].type+'">'+ul+'</pre>';
 			}
 
 			body += '</div>';
