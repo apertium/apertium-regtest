@@ -3,6 +3,8 @@ apertium-regtest
 
 Regression testing system for Apertium.
 
+Full documentation: https://wiki.apertium.org/wiki/User:Popcorndude/Regression-Testing
+
 # Installation
 
 Can be run as-is by invoking the `apertium-regtest.py` file in this directory or by running
