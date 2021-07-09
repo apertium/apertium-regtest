@@ -283,6 +283,8 @@ class Corpus:
         self.commands = {}
         self.hashes = []
         Corpus.all_corpora[name] = self
+    def __len__(self):
+        return len(self.hashes)
     def run(self):
         if self.mode:
             Mode.all_modes[self.mode].run(self.name, self.infile,
@@ -349,6 +351,29 @@ class Corpus:
         delete.sort()
         self.data['add'] = add
         self.data['del'] = delete
+    def page(self, start, page_len):
+        print('%s.page(%d, %d)' % (self.name, start, page_len))
+        hs = self.hashes[start:start+page_len]
+        def hf(dct):
+            nonlocal hs
+            return {k:v for k, v in dct.items() if k in hs}
+        return {
+            'inputs': hf(self.data['inputs']),
+            'cmds': [
+                {
+                    'cmd': blob['cmd'],
+                    'opt': blob['opt'],
+                    'output': hf(blob['output']),
+                    'expect': hf(blob['expect']),
+                    'gold': hf(blob['gold']),
+                    'trace': hf(blob['trace'])
+                }
+                for blob in self.data['cmds']
+            ],
+            'count': page_len,
+            'add': self.data['add'],
+            'del': self.data['del']
+        }
     def step(self, s):
         return self.data['cmds'][self.commands.get(s, -1)]
     def get_changed_hashes(self):
@@ -459,26 +484,45 @@ def test_run(corpora):
         Corpus.all_corpora[name].run()
     return True, ''
 
-def cb_load(page):
-    # TODO: this actually returns the whole corpus as a single page
+def cb_load(page, step=25):
     changes = {
         'changed_final': [],
         'changed_any': [],
         'unchanged': []
     }
     state = {
-        '_step': 25, # TODO
-        '_count': 0,
-        '_ordered': []
+        '_step': step,
+        '_ordered': [],
+        '_page': page
     }
-    for name, corpus in Corpus.all_corpora.items():
+    ct_min = page * step
+    ct_max = (page + 1) * step
+    print('ct_min', ct_min, 'ct_max', ct_max)
+    ct = 0
+    for name in sorted(Corpus.all_corpora.keys()):
+        corpus = Corpus.all_corpora[name]
         corpus.load()
-        state[name] = corpus.data
-        state['_count'] += state[name]['count']
-    state['_pages'] = math.ceil(state['_count']/25) # TODO
+        ct_next = ct + len(corpus)
+        if ct_next < ct_min or ct >= ct_max:
+            state[name] = corpus.page(0, 0)
+        elif ct < ct_min:
+            start = ct_min - ct
+            ln = min(ct_max, ct_next) - ct_min
+            state[name] = corpus.page(start, ln)
+        else: # ct >= ct_min
+            ln = min(ct_max, ct_next) - ct
+            state[name] = corpus.page(0, ln)
+        ct = ct_next
+    state['_count'] = ct
+    state['_pages'] = math.ceil(ct/step)
     return {'state': state}
 
 class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, request, client_address, server, directory=None,
+                 page_size=25):
+        self.page_size = page_size
+        super().__init__(request, client_address, server, directory=directory)
+
     def do_GET(self):
         parts = urllib.parse.urlsplit(self.path)
         if parts.path.strip('/') != 'callback':
@@ -513,7 +557,7 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             resp['folder'] = os.path.basename(os.getcwd())
             resp['corpora'] = list(sorted(Corpus.all_corpora.keys()))
         elif params['a'][0] == 'load':
-            resp = cb_load(params['p'][0])
+            resp = cb_load(int(params['p'][0]), self.page_size)
         elif params['a'][0] == 'run':
             good, output = test_run(params.get('c', ['*']))
             resp['good'] = good
@@ -547,9 +591,9 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(rstr)
 
-def start_server(port):
+def start_server(port, page_size=25):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
-    handle = partial(CallbackRequestHandler, directory=d)
+    handle = partial(CallbackRequestHandler, directory=d, page_size=page_size)
     print('Starting server')
     print('Open http://localhost:%d in your browser' % port)
     with socketserver.TCPServer(('', port), handle) as httpd:
@@ -782,6 +826,8 @@ apertium-regtest has 3 modes available:
                         help="in cli mode, don't automatically save pending changes upon exiting")
     parser.add_argument('-p', '--port', type=int, default=3000,
                         help="in web mode, run the server on this port (default 3000)")
+    parser.add_argument('-z', '--pagesize', type=int, default=25,
+                        help="size of blocks to send to browser in web mode (default 25)")
     args = parser.parse_args()
     if args.mode == 'test':
         load_corpora(static=True)
@@ -817,7 +863,7 @@ apertium-regtest has 3 modes available:
             sys.exit(1)
     elif args.mode == 'web':
         load_corpora(static=False)
-        start_server(args.port)
+        start_server(args.port, args.pagesize)
     elif args.mode == 'cli':
         load_corpora(static=False)
         RegtestShell(args.autosave).cmdloop()
