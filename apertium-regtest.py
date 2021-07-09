@@ -15,6 +15,7 @@ import shlex
 import socketserver
 import subprocess
 import sys
+import time
 import urllib.parse
 import xml.etree.ElementTree
 import zlib
@@ -23,16 +24,26 @@ def hash_line(s):
     return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'-_')[:12].decode('utf-8')
 
 def load_input(fname):
-    with open(fname, 'r') as fin:
-        lines = fin.read().splitlines()
-        ret = {}
-        for i, l_ in enumerate(lines):
-            # TODO: more careful escape handling
-            l = l_.split('#')[0].replace('\\n', '\n').strip()
-            if not l:
-                continue
-            ret[hash_line(l)] = [i, l]
-        return ret
+    try:
+        with open(fname, 'r') as fin:
+            lines = fin.read().splitlines()
+            ret = {}
+            for i, l_ in enumerate(lines):
+                # TODO: more careful escape handling
+                l = l_.split('#')[0].replace('\\n', '\n').strip()
+                if not l:
+                    continue
+                ret[hash_line(l)] = [i, l]
+            return ret
+    except FileNotFoundError:
+        print('ERROR: Input file %s does not exist!' % fname)
+        sys.exit(1)
+
+def load_input_string(fname):
+    txt = ''
+    for hsh, (line, content) in load_input(fname).items():
+        txt += '[%s#%s] %s\n[/%s]\n\0' % (hsh, line, content, hsh)
+    return txt
 
 # [hash#line] content [/hash]
 txt_out_format = re.compile(r'\[([A-Za-z0-9_-]+)#(\d+)\](.*)\[/\1\]', re.DOTALL)
@@ -54,7 +65,7 @@ def load_output(fname):
     except FileNotFoundError:
         return {}
 
-def save_output(fname, data, sep='\n'):
+def save_output(fname, data):
     with open(fname, 'w') as fout:
         for inhash in sorted(data.keys()):
             fout.write('[%s#0] %s\n[/%s]\n' % (inhash, data[inhash][1], inhash))
@@ -71,19 +82,40 @@ def load_gold(fname):
                         opts.append(o2)
                 if not opts:
                     print('ERROR: Empty entry %s in %s' % (ident, fname))
-                    sys.exit(1)
+                    continue
                 ret[hsh] = opts
             return ret
     except FileNotFoundError:
         return {}
 
-def save_gold(fname, data, sep='\n'):
+def save_gold(fname, data):
     with open(fname, 'w') as fout:
         for inhash in sorted(data.keys()):
             fout.write('[%s]\n' % inhash)
             for ln in sorted(data[inhash]):
                 fout.write('%s [/option]\n' % ln)
             fout.write('[/%s]\n' % inhash)
+
+def run_command(cmd, intxt, outfile, shell=False):
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, shell=shell)
+    stdout, stderr = proc.communicate(intxt.encode('utf-8'))
+    if proc.returncode != 0:
+        c = cmd if isinstance(cmd, str) else ' '.join(cmd)
+        print('Failed command: %s' % c)
+        print('Writing stderr to test/error.log')
+        with open('test/error.log', 'ab') as fout:
+            fout.write(('Command: %s\n' % c).encode('utf-8'))
+            fout.write(('Output file: %s\n' % outfile).encode('utf-8'))
+            fout.write(('Time: %s\n' % time.asctime()).encode('utf-8'))
+            fout.write(b'Stderr:\n\n')
+            fout.write(stderr)
+            fout.write(b'\n\n')
+        print('Exiting')
+        sys.exit(1)
+    else:
+        with open(outfile, 'wb') as fout:
+            fout.write(stdout)
 
 class Step:
     prognames = {
@@ -128,40 +160,34 @@ class Step:
         cmd = [self.prog] + self.args
         if self.prog in Step.prognames or self.prog in ['lt-proc', 'hfst-proc']:
             cmd.append('-z')
-        with open(in_name, 'r') as fin:
-            if first:
-                data = load_input(in_name)
-                txt = ''
-                for hsh, (line, content) in data.items():
-                    txt += '[%s#%s] %s\n[/%s]\n\0' % (hsh, line, content, hsh)
-            else:
+        txt = ''
+        if first:
+            txt = load_input_string(in_name)
+        else:
+            with open(in_name, 'r') as fin:
                 txt = fin.read()
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE)
-            stdout, stderr = proc.communicate(txt.encode('utf-8'))
-            with open(out_name, 'wb') as fout:
-                fout.write(stdout)
+        run_command(cmd, txt, out_name)
 
 class Mode:
     all_modes = {}
     def __init__(self, xml):
         self.name = xml.attrib['name']
         self.steps = [Step(s) for s in xml[0]]
+        self.commands = {}
         nm = defaultdict(lambda: 0)
-        for s in self.steps:
+        for i, s in enumerate(self.steps):
             nm[s.name] += 1
             if nm[s.name] > 1:
                 s.name += str(nm[s.name])
+            self.commands[s.name] = i
         Mode.all_modes[self.name] = self
-    def run(self, corpusname, filename):
+    def run(self, corpusname, filename, start=None):
         fin = filename
-        for i, step in enumerate(self.steps):
+        idx = self.commands.get(start, 0)
+        for i, step in enumerate(self.steps[idx:]):
             fout = 'test/%s-%s-output.txt' % (corpusname, step.name)
             step.run(fin, fout, first=(i == 0))
             fin = fout
-        with open(fin, 'r') as f1:
-            with open('test/%s-all-output.txt' % corpusname, 'w') as f2:
-                f2.write(f1.read())
     def get_commands(self):
         return [s.name for s in self.steps]
 
@@ -177,7 +203,12 @@ def load_modes():
         print('Parser message: %s' % e.msg)
         sys.exit(1)
     for m in root:
-        Mode(m)
+        try:
+            Mode(m)
+        except:
+            print('Unable to parse modes.xml.')
+            print('Run `apertium-validate-modes` for more information.')
+            sys.exit(1)
 
 def get_url(remote):
     proc = subprocess.run(['git', 'remote', 'get-url', remote],
@@ -232,10 +263,20 @@ def check_git():
 class Corpus:
     all_corpora = {}
     def __init__(self, name, blob):
-        # TODO: more error checking, start-step, command
         self.name = name
-        self.mode = blob['mode']
+        self.mode = blob.get('mode', None)
+        self.shell = blob.get('command', None)
+        if not self.mode and not self.shell:
+            print('Corpus %s must specify either "mode": or "command":' % self.name)
+            sys.exit(1)
+        if self.mode and self.mode not in Mode.all_modes:
+            print('Unknown mode %s in corpus %s' % (self.mode, self.name))
+            sys.exit(1)
+        if 'input' not in blob:
+            print('Corpus %s must specify an input file' % self.name)
+            sys.exit(1)
         self.infile = 'test/' + blob['input']
+        self.start_step = blob.get('start-step', None)
         self.data = {}
         self.loaded = False
         self.unsaved = set()
@@ -243,7 +284,12 @@ class Corpus:
         self.hashes = []
         Corpus.all_corpora[name] = self
     def run(self):
-        Mode.all_modes[self.mode].run(self.name, self.infile)
+        if self.mode:
+            Mode.all_modes[self.mode].run(self.name, self.infile,
+                                          start=self.start_step)
+        else:
+            txt = load_input_string(self.infile)
+            run_command(self.shell, txt, self.out_name('all'), shell=True)
         self.loaded = False
     def exp_name(self, cmd):
         return 'test/%s-%s-expected.txt' % (self.name, cmd)
@@ -263,7 +309,9 @@ class Corpus:
         self.hashes = list(ins.keys())
         self.hashes.sort(key = lambda x: ins[x][0])
         outs = []
-        cmds = Mode.all_modes[self.mode].get_commands()
+        cmds = ['all']
+        if self.mode:
+            cmds = Mode.all_modes[self.mode].get_commands()
         self.data = {
             'inputs': ins,
             'cmds': [],
@@ -370,6 +418,8 @@ class Corpus:
         changes = self.accept_add_del(False)
         for blob in self.data['cmds']:
             for h in (hashes or blob['expect'].keys()):
+                if h not in blob['expect']:
+                    continue
                 if blob['expect'][h][1] != blob['output'][h][1]:
                     blob['expect'][h][1] = blob['output'][h][1]
                     changes.append(h)
@@ -383,10 +433,10 @@ class Corpus:
         blob['gold'][hsh] = vals
         save_gold(self.gold_name(blob['cmd']), blob['gold'])
 
-def load_corpora():
+def load_corpora(static=False):
     if not os.path.isdir('test') or not os.path.isfile('test/tests.json'):
         if os.path.isdir('.git'):
-            if check_git():
+            if not static and check_git():
                 load_corpora()
                 return
         print('Test corpora not found. Please create test/tests.json')
@@ -410,6 +460,7 @@ def test_run(corpora):
     return True, ''
 
 def cb_load(page):
+    # TODO: this actually returns the whole corpus as a single page
     changes = {
         'changed_final': [],
         'changed_any': [],
@@ -454,20 +505,20 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         status = HTTPStatus.OK
         resp = {}
 
+        # TODO: error checking
+        # TODO: if a catastrophic error occurs, the program exits
+        # thus returning no information to the browser
+        # maybe switch to exceptions elsewhere?
         if params['a'][0] == 'init':
             resp['folder'] = os.path.basename(os.getcwd())
             resp['corpora'] = list(sorted(Corpus.all_corpora.keys()))
         elif params['a'][0] == 'load':
-            #try:
             resp = cb_load(params['p'][0])
-            #except:
-            #    resp['error'] = 'Current state is missing or invalid. You will need to run the regression test for all corpora.'
         elif params['a'][0] == 'run':
             good, output = test_run(params.get('c', ['*']))
             resp['good'] = good
             resp['output'] = output
         elif params['a'][0] == 'accept-nd':
-            # TODO: error checking
             resp['c'] = params['c'][0]
             resp['hs'] = Corpus.all_corpora[resp['c']].accept_add_del()
         elif params['a'][0] == 'accept':
@@ -496,10 +547,10 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(rstr)
 
-def start_server():
+def start_server(port):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
     handle = partial(CallbackRequestHandler, directory=d)
-    with socketserver.TCPServer(('', 3000), handle) as httpd:
+    with socketserver.TCPServer(('', port), handle) as httpd:
    	    httpd.serve_forever()
 
 class RegtestShell(cmd.Cmd):
@@ -707,7 +758,6 @@ Abbreviated form: `q`'''
 
 if __name__ == '__main__':
     load_modes()
-    load_corpora()
     import argparse
     parser = argparse.ArgumentParser(
         prog='apertium-regtest',
@@ -724,8 +774,11 @@ apertium-regtest has 3 modes available:
     parser.add_argument('mode', choices=['test', 'web', 'cli'])
     parser.add_argument('--no-autosave', action='store_false', dest='autosave',
                         help="in cli mode, don't automatically save pending changes upon exiting")
+    parser.add_argument('-p', '--port', type=int, default=3000,
+                        help="in web mode, run the server on this port (default 3000)")
     args = parser.parse_args()
     if args.mode == 'test':
+        load_corpora(static=True)
         n = len(Corpus.all_corpora.items())
         changed = False
         for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
@@ -757,8 +810,10 @@ apertium-regtest has 3 modes available:
             print('There were changes! Rerun in interactive mode to update tests.')
             sys.exit(1)
     elif args.mode == 'web':
-        start_server()
+        load_corpora(static=False)
+        start_server(args.port)
     elif args.mode == 'cli':
+        load_corpora(static=False)
         RegtestShell(args.autosave).cmdloop()
     else:
         print("Unknown operation mode. Expected 'test', 'web', or 'cli'.")
