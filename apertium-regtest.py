@@ -550,6 +550,8 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
 def start_server(port):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
     handle = partial(CallbackRequestHandler, directory=d)
+    print('Starting server')
+    print('Open http://localhost:%d in your browser' % port)
     with socketserver.TCPServer(('', port), handle) as httpd:
    	    httpd.serve_forever()
 
