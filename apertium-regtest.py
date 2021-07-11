@@ -854,9 +854,10 @@ apertium-regtest has 3 modes available:
                 total += 1
                 if out[1] == exp or out[1] in golds:
                     same += 1
-            print('  %s/%s (%s%%) lines match expected value' % (same, total, round(100.0*same/total, 2)))
-            if same != total:
-                changed = True
+            if total > 0:
+                print('  %s/%s (%s%%) lines match expected value' % (same, total, round(100.0*same/total, 2)))
+                if same != total:
+                    changed = True
             print('')
         if changed:
             print('There were changes! Rerun in interactive mode to update tests.')
