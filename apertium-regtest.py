@@ -285,7 +285,14 @@ class Corpus:
         self.data = {}
         self.loaded = False
         self.unsaved = set()
-        self.commands = {}
+        self.command_list = ['all']
+        if self.mode:
+            self.command_list = Mode.all_modes[self.mode].get_commands()
+        self.commands = {c:i for i, c in enumerate(self.command_list)}
+        self.relevant_commands = blob.get('relevant', [self.command_list[-1]])
+        if not isinstance(self.relevant_commands, list):
+            print('Corpus %s specified a non-list for "relevant"' % self.name)
+            sys.exit(1)
         self.hashes = []
         Corpus.all_corpora[name] = self
     def __len__(self):
@@ -316,17 +323,12 @@ class Corpus:
         self.hashes = list(ins.keys())
         self.hashes.sort(key = lambda x: ins[x][0])
         outs = []
-        cmds = ['all']
-        if self.mode:
-            cmds = Mode.all_modes[self.mode].get_commands()
         self.data = {
             'inputs': ins,
             'cmds': [],
             'count': len(ins)
         }
-        self.commands = {}
-        for i, c in enumerate(cmds):
-            self.commands[c] = i
+        for c in self.command_list:
             expfile = self.exp_name(c)
             outdata = load_output(self.out_name(c))
             expdata = {}
@@ -344,6 +346,7 @@ class Corpus:
             self.data['cmds'].append({
                 'cmd': c,
                 'opt': c,
+                'relevant': (c in self.relevant_commands),
                 'output': outdata,
                 'expect': expdata,
                 'gold': golddata,
@@ -381,10 +384,9 @@ class Corpus:
     def step(self, s):
         return self.data['cmds'][self.commands.get(s, -1)]
     def get_changed_hashes(self):
-        # TODO: non-final changes
-        blob = self.data['cmds'][-1]
-        ret = []
-        for hsh in blob['output']:
+        ret = set()
+        for cmd in self.relevant_commands:
+            blob = self.step(cmd)
             if hsh not in blob['expect']:
                 continue
             if blob['output'][hsh][1] == blob['expect'][hsh][1]:
@@ -392,9 +394,8 @@ class Corpus:
             if hsh in blob['gold']:
                 if blob['output'][hsh][1] in blob['gold'][hsh]:
                     continue
-            ret.append(hsh)
-        ret.sort(key = lambda x: blob['output'][hsh][0])
-        return ret
+            ret.add(hsh)
+        return sorted(ret, key = lambda x: self.data['inputs'][hsh][0])
     def display_line(self, hsh, step=None):
         # TODO: colors, diffs
         def indent(s):
@@ -874,6 +875,22 @@ Abbreviated form: `q`'''
         print('')
         return self.do_quit('')
 
+def check_hash(corpus, hsh):
+    expect = True # matches expectation or gold in all cases
+    gold = True   # matches gold in all cases
+                  # note: if gold not present, returns False
+    for c in corpus.relevant_commands:
+        data = corpus.step(c)
+        out = data['output'].get(hsh, [0, ''])[1]
+        exp = data['expect'].get(hsh, [0, ''])[1]
+        gld = data['gold'].get(hsh, [])
+        if out in gld:
+            continue
+        gold = False
+        if out != exp:
+            expect = False
+    return expect, gold
+
 def static_test():
     n = len(Corpus.all_corpora.items())
     changed = False
@@ -888,29 +905,25 @@ def static_test():
         if corp.data['del']:
             print('  %s lines removed since last run' % len(corp.data['del']))
             changed = True
-        data = corp.data['cmds'][-1]
         total = 0
         same = 0
         gold = 0
-        gold_total = 0
-        for key, out in data['output'].items():
-            if key in corp.data['add']:
+        for hsh in corp.data['inputs']:
+            if hsh in corp.data['add']:
                 continue
-            exp = data['expect'].get(key, [0, ''])[1]
-            golds = data['gold'].get(key, [])
+            e, g = check_hash(corp, hsh)
             total += 1
-            if out[1] == exp or out[1] in golds:
+            if e:
                 same += 1
-            if golds:
-                gold_total += 1
-                if out[1] in golds:
+                if g:
                     gold += 1
         if total > 0:
-            print('  %s/%s (%s%%) lines match expected value' % (same, total, round(100.0*same/total, 2)))
+            print('  %s/%s (%s%%) lines pass (match expected or gold)' % (same, total, round(100.0*same/total, 2)))
             if same != total:
                 changed = True
-        if gold_total > 0:
-            print('  %s/%s (%s%%) lines match gold value' % (gold, gold_total, round(100.0*gold/gold_total, 2)))
+        if same > 0:
+            print('  %s/%s (%s%%) passing lines match gold' % (gold, same, round(100.0*gold/same, 2)))
+            print('    %s/%s (%s%%) of total' % (gold, total, round(100.0*gold/total, 2)))
         print('')
     if changed:
         print('There were changes! Rerun in interactive mode to update tests.')

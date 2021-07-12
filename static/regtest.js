@@ -599,7 +599,10 @@ function cb_load(rv) {
 					changed = true;
                     if (cmd.gold.hasOwnProperty(k) && cmd.gold[k].indexOf(cmd.output[k][1]) != -1) {
 						style += ' rt-gold';
-					}
+					} else if (cmd.relevant) {
+                        changed_result = ' rt-changed-result';
+                        bucket = 'changed_end';
+                    }
 
 					expect = ' data-expect="'+esc_html(cmd.expect[k][1])+'"';
 				}
