@@ -558,65 +558,41 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         data = self.rfile.read(ln)
         self.do_callback(urllib.parse.parse_qs(data.decode('utf-8')))
 
-    def get_encoder(self):
-        # mostly copied from https://github.com/PierreQuentel/httpcompressionserver/blob/master/httpcompressionserver.py (BSD license)
-        accept_encoding = self.headers.get_all('Accept-Encoding', ())
-        encodings = {}
-        for accept in http.cookiejar.split_header_words(accept_encoding):
-            params = iter(accept)
-            encoding = next(params, ('', ''))[0]
-            quality, value = next(params, ('', ''))
-            if quality == 'q':
-                try:
-                    q = float(value)
-                except ValueError:
-                    q = 0 # ignore invalid
-            else:
-                q = 1
-            encodings[encoding] = max(encodings.get(encoding, 0), q)
-        compressions = set(encodings).intersection(self.compressions)
-        compression = None
-        if compressions:
-            compression = max((encodings[enc], enc) for enc in compressions)[1]
-        elif '*' in encodings and self.compressions:
-            compression = list(self.compressions)[0]
-        if compression:
-            return compression, self.compressions[compression]
-        return None, None
-
     def send_json(self, status, blob):
         # based on https://github.com/PierreQuentel/httpcompressionserver/blob/master/httpcompressionserver.py (BSD license)
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
         rstr = json.dumps(blob).encode('utf-8')
-        name, enc = self.get_encoder()
-        if enc:
-            self.send_header('Content-Encoding', name)
-            if len(rstr) > (2 << 18):
-                dt = b''.join(enc(rstr))
-                self.send_header('Content-Length', len(dt))
-                self.end_headers()
-                self.wfile.write(dt)
-                return
-            else:
-                if self.protocol_version >= 'HTTP/1.1':
-                    self.send_header('Transfer-Encoding', 'chunked')
-                    self.end_headers()
-                    def chunk(dt):
-                        self.wfile.write(hex(len(dt))[2:].upper().encode('utf-8'))
-                        self.wfile.write(b'\r\n' + dt + b'\r\n')
-                    for data in enc(rstr):
-                        if data:
-                            chunk(data)
-                    chunk(b'')
-                else:
-                    self.end_headers()
-                    for data in enc(rstr):
-                        self.wfile.write(data)
+        name = None
+        enc = None
+        accept_encoding = self.headers.get_all('Accept-Encoding', ())
+        for accept in http.cookiejar.split_header_words(accept_encoding):
+            if accept:
+                name = accept[0][0]
+                if name in self.compressions:
+                    enc = self.compressions[name]
+                    break
         else:
+            # no acceptable encoding found, so write it plain
             self.send_header('Content-Length', len(rstr))
             self.end_headers()
             self.wfile.write(rstr)
+            return
+        self.send_header('Content-Encoding', name)
+        if len(rstr) < (2 << 18):
+            # don't bother chunking shorter messages
+            dt = b''.join(enc(rstr))
+            self.send_header('Content-Length', len(dt))
+            self.end_headers()
+            self.wfile.write(dt)
+        else:
+            self.send_header('Transfer-Encoding', 'chunked')
+            self.end_headers()
+            for data in enc(rstr):
+                if data:
+                    ln = hex(len(data))[2:].upper().encode('utf-8')
+                    self.wfile.write(ln + b'\r\n' + data + b'\r\n')
+            self.wfile.write(b'0\r\n\r\n')
 
     def do_callback(self, params):
         if 'a' not in params:
