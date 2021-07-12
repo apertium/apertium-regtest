@@ -6,6 +6,7 @@ from collections import defaultdict
 from functools import partial
 import hashlib
 from http import HTTPStatus
+import http.cookiejar
 import http.server
 import json
 import math
@@ -352,7 +353,6 @@ class Corpus:
         self.data['add'] = add
         self.data['del'] = delete
     def page(self, start, page_len):
-        print('%s.page(%d, %d)' % (self.name, start, page_len))
         hs = self.hashes[start:start+page_len]
         def hf(dct):
             nonlocal hs
@@ -497,7 +497,6 @@ def cb_load(page, step=25):
     }
     ct_min = page * step
     ct_max = (page + 1) * step
-    print('ct_min', ct_min, 'ct_max', ct_max)
     ct = 0
     for name in sorted(Corpus.all_corpora.keys()):
         corpus = Corpus.all_corpora[name]
@@ -517,7 +516,30 @@ def cb_load(page, step=25):
     state['_pages'] = math.ceil(ct/step)
     return {'state': state}
 
+def compress(s, wbits):
+    step = 2 << 17
+    producer = zlib.compressobj(level=9, wbits=wbits)
+    idx = 0
+    while idx < len(s):
+        yield producer.compress(s[idx:idx+step])
+        idx += step
+    yield producer.flush()
+
+def gzip_producer(s):
+    return compress(s, 31)
+
+def deflate_producer(s):
+    return compress(s, 15)
+
 class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
+    compressions = {
+        'deflate': deflate_producer,
+        'gzip': gzip_producer,
+        'x-gzip': gzip_producer
+    }
+
+    protocol_version = 'HTTP/1.1'
+
     def __init__(self, request, client_address, server, directory=None,
                  page_size=25):
         self.page_size = page_size
@@ -535,6 +557,66 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         ln = int(self.headers['Content-Length'])
         data = self.rfile.read(ln)
         self.do_callback(urllib.parse.parse_qs(data.decode('utf-8')))
+
+    def get_encoder(self):
+        # mostly copied from https://github.com/PierreQuentel/httpcompressionserver/blob/master/httpcompressionserver.py (BSD license)
+        accept_encoding = self.headers.get_all('Accept-Encoding', ())
+        encodings = {}
+        for accept in http.cookiejar.split_header_words(accept_encoding):
+            params = iter(accept)
+            encoding = next(params, ('', ''))[0]
+            quality, value = next(params, ('', ''))
+            if quality == 'q':
+                try:
+                    q = float(value)
+                except ValueError:
+                    q = 0 # ignore invalid
+            else:
+                q = 1
+            encodings[encoding] = max(encodings.get(encoding, 0), q)
+        compressions = set(encodings).intersection(self.compressions)
+        compression = None
+        if compressions:
+            compression = max((encodings[enc], enc) for enc in compressions)[1]
+        elif '*' in encodings and self.compressions:
+            compression = list(self.compressions)[0]
+        if compression:
+            return compression, self.compressions[compression]
+        return None, None
+
+    def send_json(self, status, blob):
+        # based on https://github.com/PierreQuentel/httpcompressionserver/blob/master/httpcompressionserver.py (BSD license)
+        self.send_response(status)
+        self.send_header('Content-type', 'application/json')
+        rstr = json.dumps(blob).encode('utf-8')
+        name, enc = self.get_encoder()
+        if enc:
+            self.send_header('Content-Encoding', name)
+            if len(rstr) > (2 << 18):
+                dt = b''.join(enc(rstr))
+                self.send_header('Content-Length', len(dt))
+                self.end_headers()
+                self.wfile.write(dt)
+                return
+            else:
+                if self.protocol_version >= 'HTTP/1.1':
+                    self.send_header('Transfer-Encoding', 'chunked')
+                    self.end_headers()
+                    def chunk(dt):
+                        self.wfile.write(hex(len(dt))[2:].upper().encode('utf-8'))
+                        self.wfile.write(b'\r\n' + dt + b'\r\n')
+                    for data in enc(rstr):
+                        if data:
+                            chunk(data)
+                    chunk(b'')
+                else:
+                    self.end_headers()
+                    for data in enc(rstr):
+                        self.wfile.write(data)
+        else:
+            self.send_header('Content-Length', len(rstr))
+            self.end_headers()
+            self.wfile.write(rstr)
 
     def do_callback(self, params):
         if 'a' not in params:
@@ -584,12 +666,7 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         else:
             resp['error'] = 'unknown value for parameter a'
 
-        rstr = json.dumps(resp).encode('utf-8')
-        self.send_response(status)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Content-Length', len(rstr))
-        self.end_headers()
-        self.wfile.write(rstr)
+        self.send_json(status, resp)
 
 def start_server(port, page_size=25):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
@@ -806,6 +883,49 @@ Abbreviated form: `q`'''
         print('')
         return self.do_quit('')
 
+def static_test():
+    n = len(Corpus.all_corpora.items())
+    changed = False
+    for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
+        print('Corpus %s of %s: %s' % (i, n, name))
+        corp.load()
+        corp.run()
+        print('  %s total lines' % len(corp.data['inputs']))
+        if corp.data['add']:
+            print('  %s lines added since last run' % len(corp.data['add']))
+            changed = True
+        if corp.data['del']:
+            print('  %s lines removed since last run' % len(corp.data['del']))
+            changed = True
+        data = corp.data['cmds'][-1]
+        total = 0
+        same = 0
+        gold = 0
+        gold_total = 0
+        for key, out in data['output'].items():
+            if key in corp.data['add']:
+                continue
+            exp = data['expect'].get(key, [0, ''])[1]
+            golds = data['gold'].get(key, [])
+            total += 1
+            if out[1] == exp or out[1] in golds:
+                same += 1
+            if golds:
+                gold_total += 1
+                if out[1] in golds:
+                    gold += 1
+        if total > 0:
+            print('  %s/%s (%s%%) lines match expected value' % (same, total, round(100.0*same/total, 2)))
+            if same != total:
+                changed = True
+        if gold_total > 0:
+            print('  %s/%s (%s%%) lines match gold value' % (gold, gold_total, round(100.0*gold/gold_total, 2)))
+        print('')
+    if changed:
+        print('There were changes! Rerun in interactive mode to update tests.')
+        return False
+    return True
+
 if __name__ == '__main__':
     load_modes()
     import argparse
@@ -831,36 +951,7 @@ apertium-regtest has 3 modes available:
     args = parser.parse_args()
     if args.mode == 'test':
         load_corpora(static=True)
-        n = len(Corpus.all_corpora.items())
-        changed = False
-        for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
-            print('Corpus %s of %s: %s' % (i, n, name))
-            corp.load()
-            corp.run()
-            if corp.data['add']:
-                print('  %s lines added since last run' % len(corp.data['add']))
-                changed = True
-            if corp.data['del']:
-                print('  %s lines removed since last run' % len(corp.data['del']))
-                changed = True
-            data = corp.data['cmds'][-1]
-            total = 0
-            same = 0
-            for key, out in data['output'].items():
-                if key in corp.data['add']:
-                    continue
-                exp = data['expect'].get(key, [0, ''])[1]
-                golds = data['gold'].get(key, [])
-                total += 1
-                if out[1] == exp or out[1] in golds:
-                    same += 1
-            if total > 0:
-                print('  %s/%s (%s%%) lines match expected value' % (same, total, round(100.0*same/total, 2)))
-                if same != total:
-                    changed = True
-            print('')
-        if changed:
-            print('There were changes! Rerun in interactive mode to update tests.')
+        if not static_test():
             sys.exit(1)
     elif args.mode == 'web':
         load_corpora(static=False)
