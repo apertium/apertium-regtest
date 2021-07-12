@@ -24,6 +24,11 @@ import zlib
 def hash_line(s):
     return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'-_')[:12].decode('utf-8')
 
+class InputFileDoesNotExist(FileNotFoundError):
+    pass
+class ErrorInPipeline(Exception):
+    pass
+
 def load_input(fname):
     try:
         with open(fname, 'r') as fin:
@@ -38,7 +43,7 @@ def load_input(fname):
             return ret
     except FileNotFoundError:
         print('ERROR: Input file %s does not exist!' % fname)
-        sys.exit(1)
+        raise InputFileDoesNotExist(fname)
 
 def load_input_string(fname):
     txt = ''
@@ -60,7 +65,6 @@ def load_output(fname):
                 content = content_.strip()
                 if not content:
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
-                    sys.exit(1)
                 ret[hsh] = [int(line), content]
             return ret
     except FileNotFoundError:
@@ -113,7 +117,7 @@ def run_command(cmd, intxt, outfile, shell=False):
             fout.write(stderr)
             fout.write(b'\n\n')
         print('Exiting')
-        sys.exit(1)
+        raise ErrorInPipeline(c)
     else:
         with open(outfile, 'wb') as fout:
             fout.write(stdout)
@@ -606,20 +610,26 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         status = HTTPStatus.OK
         resp = {}
+        shutdown = False
 
         # TODO: error checking
-        # TODO: if a catastrophic error occurs, the program exits
-        # thus returning no information to the browser
-        # maybe switch to exceptions elsewhere?
         if params['a'][0] == 'init':
             resp['folder'] = os.path.basename(os.getcwd())
             resp['corpora'] = list(sorted(Corpus.all_corpora.keys()))
         elif params['a'][0] == 'load':
-            resp = cb_load(int(params['p'][0]), self.page_size)
+            try:
+                resp = cb_load(int(params['p'][0]), self.page_size)
+            except InputFileDoesNotExist as e:
+                resp = {'error': 'Input file %s expected but not found! Server exiting.' % e.args[0]}
+                shutdown = True
         elif params['a'][0] == 'run':
-            good, output = test_run(params.get('c', ['*']))
-            resp['good'] = good
-            resp['output'] = output
+            try:
+                good, output = test_run(params.get('c', ['*']))
+                resp['good'] = good
+                resp['output'] = output
+            except ErrorInPipeline as e:
+                resp = {'error': 'Command `%s` crashed. Server exiting.' % e.args[0]}
+                shutdown = True
         elif params['a'][0] == 'accept-nd':
             resp['c'] = params['c'][0]
             resp['hs'] = Corpus.all_corpora[resp['c']].accept_add_del()
@@ -643,6 +653,11 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             resp['error'] = 'unknown value for parameter a'
 
         self.send_json(status, resp)
+        if shutdown:
+            if 'error' in resp:
+                sys.exit(1)
+            else:
+                sys.exit(0)
 
 def start_server(port, page_size=25):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
@@ -927,14 +942,20 @@ apertium-regtest has 3 modes available:
     args = parser.parse_args()
     if args.mode == 'test':
         load_corpora(static=True)
-        if not static_test():
+        try:
+            if not static_test():
+                sys.exit(1)
+        except (InputFileDoesNotExist, ErrorInPipeline):
             sys.exit(1)
     elif args.mode == 'web':
         load_corpora(static=False)
         start_server(args.port, args.pagesize)
     elif args.mode == 'cli':
         load_corpora(static=False)
-        RegtestShell(args.autosave).cmdloop()
+        try:
+            RegtestShell(args.autosave).cmdloop()
+        except (InputFileDoesNotExist, ErrorInPipeline):
+            sys.exit(1)
     else:
         print("Unknown operation mode. Expected 'test', 'web', or 'cli'.")
         sys.exit(1)
