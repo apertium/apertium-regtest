@@ -113,6 +113,10 @@ def run_command(cmd, intxt, outfile, shell=False):
             fout.write(('Command: %s\n' % c).encode('utf-8'))
             fout.write(('Output file: %s\n' % outfile).encode('utf-8'))
             fout.write(('Time: %s\n' % time.asctime()).encode('utf-8'))
+            fout.write(b'Stdin:\n\n')
+            fout.write(intxt.encode('utf-8'))
+            fout.write(b'Stdout:\n\n')
+            fout.write(stdout)
             fout.write(b'Stderr:\n\n')
             fout.write(stderr)
             fout.write(b'\n\n')
@@ -149,9 +153,15 @@ class Step:
                 self.args += shlex.split(ar.attrib['name'])
             else:
                 self.args.append(ar.attrib['name'])
-        for ar in self.args:
-            if ar == '$1' or ar == '$2':
-                ar = '-g'
+        remove = []
+        for i in range(len(self.args)):
+            if self.args[i] == '$1':
+                self.args[i] = '-g'
+            elif self.args[i] == '$2':
+                remove.append(i)
+        remove.reverse()
+        for i in remove:
+            self.args.pop(i)
         self.name = xml.attrib.get('debug-suff', 'unknown')
         if self.name == 'unknown':
             if self.prog in Step.prognames:
@@ -891,7 +901,7 @@ def check_hash(corpus, hsh):
             expect = False
     return expect, gold
 
-def static_test():
+def static_test(ignore_add=False):
     n = len(Corpus.all_corpora.items())
     changed = False
     for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
@@ -901,10 +911,12 @@ def static_test():
         print('  %s total lines' % len(corp.data['inputs']))
         if corp.data['add']:
             print('  %s lines added since last run' % len(corp.data['add']))
-            changed = True
+            if not ignore_add:
+                changed = True
         if corp.data['del']:
             print('  %s lines removed since last run' % len(corp.data['del']))
-            changed = True
+            if not ignore_add:
+                changed = True
         total = 0
         same = 0
         gold = 0
@@ -952,11 +964,13 @@ apertium-regtest has 3 modes available:
                         help="in web mode, run the server on this port (default 3000)")
     parser.add_argument('-z', '--pagesize', type=int, default=25,
                         help="size of blocks to send to browser in web mode (default 25)")
+    parser.add_argument('-i', '--ignore-add', action='store_true',
+                        help="in test mode, don't count added or deleted lines as failing")
     args = parser.parse_args()
     if args.mode == 'test':
         load_corpora(static=True)
         try:
-            if not static_test():
+            if not static_test(args.ignore_add):
                 sys.exit(1)
         except (InputFileDoesNotExist, ErrorInPipeline):
             sys.exit(1)
