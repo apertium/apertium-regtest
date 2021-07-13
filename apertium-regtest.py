@@ -6,7 +6,6 @@ from collections import defaultdict
 from functools import partial
 import hashlib
 from http import HTTPStatus
-import http.cookiejar
 import http.server
 import json
 import math
@@ -531,28 +530,16 @@ def cb_load(page, step=25):
     state['_pages'] = math.ceil(ct/step)
     return {'state': state}
 
-def compress(s, wbits):
+def compress(s):
     step = 2 << 17
-    producer = zlib.compressobj(level=9, wbits=wbits)
+    producer = zlib.compressobj(level=9, wbits=15)
     idx = 0
     while idx < len(s):
         yield producer.compress(s[idx:idx+step])
         idx += step
     yield producer.flush()
 
-def gzip_producer(s):
-    return compress(s, 31)
-
-def deflate_producer(s):
-    return compress(s, 15)
-
 class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
-    compressions = {
-        'deflate': deflate_producer,
-        'gzip': gzip_producer,
-        'x-gzip': gzip_producer
-    }
-
     protocol_version = 'HTTP/1.1'
 
     def __init__(self, request, client_address, server, directory=None,
@@ -578,32 +565,17 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
         rstr = json.dumps(blob).encode('utf-8')
-        name = None
-        enc = None
-        accept_encoding = self.headers.get_all('Accept-Encoding', ())
-        for accept in http.cookiejar.split_header_words(accept_encoding):
-            if accept:
-                name = accept[0][0]
-                if name in self.compressions:
-                    enc = self.compressions[name]
-                    break
-        else:
-            # no acceptable encoding found, so write it plain
-            self.send_header('Content-Length', len(rstr))
-            self.end_headers()
-            self.wfile.write(rstr)
-            return
-        self.send_header('Content-Encoding', name)
+        self.send_header('Content-Encoding', 'deflate')
         if len(rstr) < (2 << 18):
             # don't bother chunking shorter messages
-            dt = b''.join(enc(rstr))
+            dt = b''.join(compress(rstr))
             self.send_header('Content-Length', len(dt))
             self.end_headers()
             self.wfile.write(dt)
         else:
             self.send_header('Transfer-Encoding', 'chunked')
             self.end_headers()
-            for data in enc(rstr):
+            for data in compress(rstr):
                 if data:
                     ln = hex(len(data))[2:].upper().encode('utf-8')
                     self.wfile.write(ln + b'\r\n' + data + b'\r\n')
