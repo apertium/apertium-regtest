@@ -154,7 +154,7 @@ function toast(title, body, delay) {
 	let m = new Date().getMinutes();
 	let stamp = (h < 10 ? ('0'+h) : h)+':'+(m < 10 ? ('0'+m) : m);
 	let id = 'toast-'+Date.now()+'-'+(''+Math.random()).replace(/[^\d]+/g, '');
-	let html = '<div class="toast" id="'+id+'"><div class="toast-header"><strong class="mr-auto">'+title+'</strong> <small>'+stamp+'</small><button tabindex="-1" type="button" class="ml-2 mb-1 close" data-dismiss="toast" aria-label="Close"><span aria-hidden="true">&times;</span></button></div><div class="toast-body">'+body+'</div></div>';
+	let html = '<div class="toast" id="'+id+'"><div class="toast-header"><strong class="mr-auto">'+title+'</strong> <small>'+stamp+'</small><button tabindex="-1" type="button" class="ml-2 mb-1 btn-close" data-bs-dismiss="toast" aria-label="Close"></button></div><div class="toast-body">'+body+'</div></div>';
 	$('#toasts').append(html);
 	id = '#'+id;
 	$(id).on('hidden.bs.toast', function() { console.log('Toasted '+$(this).attr('id')); $(this).remove(); });
@@ -430,7 +430,7 @@ function btn_select_tab() {
 		$('.rt-tab-'+which).filter(':visible').click();
 	}
 
-	if (which === '*FIRST' || which === '*LAST' || which === 'gold') {
+	if (which === '*FIRST' || which === '*LAST') {
 		$('.btnAcceptAllUntil,.btnCheckedAcceptUntil').addClass('disabled').prop('disabled', true);
 	}
 	else {
@@ -619,7 +619,7 @@ function cb_load(rv) {
 				}
 
 				let id = c+'-'+k+'-'+cmd.opt;
-				nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-'+cmd.opt+style+'" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab">'+cmd.opt+'</a></li>';
+				nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-'+cmd.opt+style+'" id="'+id+'-tab" data-bs-toggle="tab" href="#'+id+'" role="tab">'+cmd.opt+'</a></li>';
 				body += '<div class="tab-pane'+style+' rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'"'+expect+' data-output="'+output+'"><pre>'+output+'</pre>';
 
                 if (cmd.gold.hasOwnProperty(k)) {
@@ -634,7 +634,7 @@ function cb_load(rv) {
 
 				if (cmd.trace.hasOwnProperty(k)) {
 					let id = c+'-'+k+'-'+cmd.opt+'-trace';
-					nav += '<li class="nav-item"><a tabindex="-1" class="nav-link" id="'+id+'-tab" data-toggle="tab" href="#'+id+'" role="tab">-trace</a></li>';
+					nav += '<li class="nav-item"><a tabindex="-1" class="nav-link" id="'+id+'-tab" data-bs-toggle="tab" href="#'+id+'" role="tab">-trace</a></li>';
 					body += '<pre class="tab-pane rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'">'+esc_html(cmd.trace[k][1])+'</pre>';
 				}
 			}

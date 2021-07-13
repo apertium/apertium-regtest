@@ -7,5 +7,6 @@ static_DATA = static/index.html static/regtest.css static/regtest.js \
 			  static/diff.js static/jquery.js
 
 install-data-hook:
-	ln -sf $(apertium_regtestdir)/apertium-regtest.py $(prefix)/bin/apertium-regtest
-	chmod +x $(prefix)/bin/apertium-regtest
+	$(MKDIR_P) $(DESTDIR)/$(prefix)/bin && \
+	chmod +x $(DESTDIR)/$(apertium_regtestdir)/apertium-regtest.py && \
+	ln -sf $(apertium_regtestdir)/apertium-regtest.py $(DESTDIR)/$(prefix)/bin/apertium-regtest
