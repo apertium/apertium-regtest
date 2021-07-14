@@ -484,12 +484,19 @@ def load_corpora(names, static=False):
         print('as described at https://wiki.apertium.org/wiki/User:Popcorndude/Regression-Testing')
         sys.exit(1)
     with open('test/tests.json') as ts:
+        pats = []
+        if names:
+            for n in names:
+                pats.append(re.compile(n))
+        else:
+            pats.append(re.compile('.*'))
         try:
             blob = json.load(ts)
             for k in blob:
-                if names and k not in names:
-                    continue
-                Corpus(k, blob[k])
+                for p in pats:
+                    if p.search(k):
+                        Corpus(k, blob[k])
+                        break
         except json.JSONDecoderError as e:
             print('test/tests.json is not a valid JSON document. First error on line %s' % e.lineno)
             sys.exit(1)
@@ -946,18 +953,30 @@ apertium-regtest has 3 modes available:
   - 'cli'  interactively updates tests from the terminal.
 ''')
     parser.add_argument('mode', choices=['test', 'web', 'cli'])
-    parser.add_argument('--no-autosave', action='store_false', dest='autosave',
-                        help="in cli mode, don't automatically save pending changes upon exiting")
-    parser.add_argument('-p', '--port', type=int, default=3000,
-                        help="in web mode, run the server on this port (default 3000)")
-    parser.add_argument('-z', '--pagesize', type=int, default=250,
-                        help="size of blocks to send to browser in web mode (default 250)")
-    parser.add_argument('-i', '--ignore-add', action='store_true',
-                        help="in test mode, don't count added or deleted lines as failing")
+
+    ### GENERAL ARGUMENTS
     parser.add_argument('-a', '--accept', action='store_true',
                         help="automatically accept additions and deletions")
     parser.add_argument('-c', '--corpus', action='append',
-                        help="only load a specific corpus")
+                        help="only load corpora matching a regular expression (this option can be provided multiple times)")
+
+    # TEST ARGUMENTS
+    test_gp = parser.add_argument_group('test mode options')
+    test_gp.add_argument('-i', '--ignore-add', action='store_true',
+                         help="in test mode, don't count added or deleted lines as failing")
+
+    # WEB ARGUMENTS
+    web_gp = parser.add_argument_group('web mode options')
+    web_gp.add_argument('-p', '--port', type=int, default=3000,
+                        help="in web mode, run the server on this port (default 3000)")
+    web_gp.add_argument('-z', '--pagesize', type=int, default=250,
+                        help="size of blocks to send to browser in web mode (default 250)")
+
+    # CLI ARGUMENTS
+    cli_gp = parser.add_argument_group('cli mode options')
+    cli_gp.add_argument('--no-autosave', action='store_false', dest='autosave',
+                        help="in cli mode, don't automatically save pending changes upon exiting")
+
     args = parser.parse_args()
     if args.accept:
         load_corpora(args.corpus, static=True)
