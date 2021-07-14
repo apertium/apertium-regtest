@@ -664,7 +664,9 @@ def start_server(port, page_size=25):
    	        httpd.serve_forever()
         except KeyboardInterrupt:
             print('')
-            sys.exit(0)
+            # the exception raised by sys.exit() gets caught by the
+            # server, so we need to be a bit more drastic
+            os._exit(0)
 
 class RegtestShell(cmd.Cmd):
     prompt = '> '
