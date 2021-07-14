@@ -396,14 +396,15 @@ class Corpus:
         ret = set()
         for cmd in self.relevant_commands:
             blob = self.step(cmd)
-            if hsh not in blob['expect']:
-                continue
-            if blob['output'][hsh][1] == blob['expect'][hsh][1]:
-                continue
-            if hsh in blob['gold']:
-                if blob['output'][hsh][1] in blob['gold'][hsh]:
+            for hsh in self.data['inputs']:
+                if hsh not in blob['expect']:
                     continue
-            ret.add(hsh)
+                if blob['output'][hsh][1] == blob['expect'][hsh][1]:
+                    continue
+                if hsh in blob['gold']:
+                    if blob['output'][hsh][1] in blob['gold'][hsh]:
+                        continue
+                ret.add(hsh)
         return sorted(ret, key = lambda x: self.data['inputs'][hsh][0])
     def display_line(self, hsh, step=None):
         # TODO: colors, diffs
@@ -472,11 +473,11 @@ class Corpus:
         blob['gold'][hsh] = vals
         save_gold(self.gold_name(blob['cmd']), blob['gold'])
 
-def load_corpora(static=False):
+def load_corpora(names, static=False):
     if not os.path.isdir('test') or not os.path.isfile('test/tests.json'):
         if os.path.isdir('.git'):
             if not static and check_git():
-                load_corpora()
+                load_corpora(names)
                 return
         print('Test corpora not found. Please create test/tests.json')
         print('as described at https://wiki.apertium.org/wiki/User:Popcorndude/Regression-Testing')
@@ -485,6 +486,8 @@ def load_corpora(static=False):
         try:
             blob = json.load(ts)
             for k in blob:
+                if names and k not in names:
+                    continue
                 Corpus(k, blob[k])
         except json.JSONDecoderError as e:
             print('test/tests.json is not a valid JSON document. First error on line %s' % e.lineno)
@@ -642,12 +645,15 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 sys.exit(0)
 
+class BigQueueServer(socketserver.TCPServer):
+    request_queue_size = 100
+
 def start_server(port, page_size=25):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
     handle = partial(CallbackRequestHandler, directory=d, page_size=page_size)
     print('Starting server')
     print('Open http://localhost:%d in your browser' % port)
-    with socketserver.TCPServer(('', port), handle) as httpd:
+    with BigQueueServer(('', port), handle) as httpd:
         try:
    	        httpd.serve_forever()
         except KeyboardInterrupt:
@@ -878,8 +884,9 @@ def static_test(ignore_add=False):
     changed = False
     for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
         print('Corpus %s of %s: %s' % (i, n, name))
-        corp.load()
-        corp.run()
+        if not corp.loaded:
+            corp.load()
+            corp.run()
         print('  %s total lines' % len(corp.data['inputs']))
         if corp.data['add']:
             print('  %s lines added since last run' % len(corp.data['add']))
@@ -934,23 +941,33 @@ apertium-regtest has 3 modes available:
                         help="in cli mode, don't automatically save pending changes upon exiting")
     parser.add_argument('-p', '--port', type=int, default=3000,
                         help="in web mode, run the server on this port (default 3000)")
-    parser.add_argument('-z', '--pagesize', type=int, default=25,
-                        help="size of blocks to send to browser in web mode (default 25)")
+    parser.add_argument('-z', '--pagesize', type=int, default=250,
+                        help="size of blocks to send to browser in web mode (default 250)")
     parser.add_argument('-i', '--ignore-add', action='store_true',
                         help="in test mode, don't count added or deleted lines as failing")
+    parser.add_argument('-a', '--accept', action='store_true',
+                        help="automatically accept additions and deletions")
+    parser.add_argument('-c', '--corpus', action='append',
+                        help="only load a specific corpus")
     args = parser.parse_args()
+    if args.accept:
+        load_corpora(args.corpus, static=True)
+        for name, corp in Corpus.all_corpora.items():
+            corp.run()
+            corp.load()
+            corp.accept_add_del()
     if args.mode == 'test':
-        load_corpora(static=True)
+        load_corpora(args.corpus, static=True)
         try:
             if not static_test(args.ignore_add):
                 sys.exit(1)
         except (InputFileDoesNotExist, ErrorInPipeline):
             sys.exit(1)
     elif args.mode == 'web':
-        load_corpora(static=False)
+        load_corpora(args.corpus, static=False)
         start_server(args.port, args.pagesize)
     elif args.mode == 'cli':
-        load_corpora(static=False)
+        load_corpora(args.corpus, static=False)
         try:
             RegtestShell(args.autosave).cmdloop()
         except (InputFileDoesNotExist, ErrorInPipeline):
