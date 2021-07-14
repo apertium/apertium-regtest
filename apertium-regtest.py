@@ -15,6 +15,7 @@ import shlex
 import socketserver
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import xml.etree.ElementTree
@@ -542,6 +543,8 @@ def compress(s):
         idx += step
     yield producer.flush()
 
+THE_CALLBACK_LOCK = threading.Lock()
+
 class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
@@ -598,6 +601,8 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
         resp = {}
         shutdown = False
 
+        THE_CALLBACK_LOCK.acquire()
+
         # TODO: error checking
         if params['a'][0] == 'init':
             resp['folder'] = os.path.basename(os.getcwd())
@@ -639,13 +644,14 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             resp['error'] = 'unknown value for parameter a'
 
         self.send_json(status, resp)
+        THE_CALLBACK_LOCK.release()
         if shutdown:
             if 'error' in resp:
                 sys.exit(1)
             else:
                 sys.exit(0)
 
-class BigQueueServer(socketserver.TCPServer):
+class BigQueueServer(socketserver.ThreadingTCPServer):
     request_queue_size = 100
 
 def start_server(port, page_size=25):
@@ -881,7 +887,7 @@ def check_hash(corpus, hsh):
 
 def static_test(ignore_add=False):
     n = len(Corpus.all_corpora.items())
-    changed = False
+    changed = set()
     for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
         print('Corpus %s of %s: %s' % (i, n, name))
         if not corp.loaded:
@@ -891,11 +897,11 @@ def static_test(ignore_add=False):
         if corp.data['add']:
             print('  %s lines added since last run' % len(corp.data['add']))
             if not ignore_add:
-                changed = True
+                changed.add(name)
         if corp.data['del']:
             print('  %s lines removed since last run' % len(corp.data['del']))
             if not ignore_add:
-                changed = True
+                changed.add(name)
         total = 0
         same = 0
         gold = 0
@@ -911,13 +917,14 @@ def static_test(ignore_add=False):
         if total > 0:
             print('  %s/%s (%s%%) lines pass (match expected or gold)' % (same, total, round(100.0*same/total, 2)))
             if same != total:
-                changed = True
+                changed.add(name)
         if same > 0:
             print('  %s/%s (%s%%) passing lines match gold' % (gold, same, round(100.0*gold/same, 2)))
             print('    %s/%s (%s%%) of total' % (gold, total, round(100.0*gold/total, 2)))
         print('')
     if changed:
         print('There were changes! Rerun in interactive mode to update tests.')
+        print('Changed corpora: ' + ', '.join(sorted(changed)))
         return False
     return True
 
