@@ -124,6 +124,10 @@ def run_command(cmd, intxt, outfile, shell=False):
         raise ErrorInPipeline(c)
     else:
         with open(outfile, 'wb') as fout:
+            if not intxt:
+                h = hash_line(intxt)
+                stdout = ('[%s#0]\n' % h).encode('utf-8') + stdout
+                stdout += ('\n[/%s]\n' % h).encode('utf-8')
             fout.write(stdout)
 
 class Step:
@@ -137,7 +141,9 @@ class Step:
         'apertium-postchunk': 'postchunk',
         'lsx-proc': 'autoseq',
         'rtx-proc': 'transfer',
-        'apertium-anaphora': 'anaph'
+        'apertium-anaphora': 'anaph',
+        'cg-conv': 'convert',
+        'vislcg3': 'disam'
     }
     morphmodes = {
         '-b': 'biltrans',
@@ -174,13 +180,16 @@ class Step:
     def run(self, in_name, out_name, first=False):
         cmd = [self.prog] + self.args
         if self.prog in Step.prognames or self.prog in ['lt-proc', 'hfst-proc']:
-            cmd.append('-z')
+            if self.prog not in ['cg-conv', 'vislcg3']:
+                cmd.append('-z')
         txt = ''
         if first:
             txt = load_input_string(in_name)
         else:
             with open(in_name, 'r') as fin:
                 txt = fin.read()
+        if self.prog == 'vislcg3':
+            txt = txt.replace('\0', '\n<STREAMCMD:FLUSH>\n')
         run_command(cmd, txt, out_name)
 
 class Mode:
@@ -290,7 +299,14 @@ class Corpus:
         if 'input' not in blob:
             print('Corpus %s must specify an input file' % self.name)
             sys.exit(1)
-        self.infile = 'test/' + blob['input']
+        self.infile = None
+        if blob['input'] != None:
+            self.infile = 'test/' + blob['input']
+        elif self.shell:
+            pass
+        else:
+            print('Corpus %s has empty input with standard mode' % self.name)
+            sys.exit(1)
         self.start_step = blob.get('start-step', None)
         self.data = {}
         self.loaded = False
@@ -312,7 +328,9 @@ class Corpus:
             Mode.all_modes[self.mode].run(self.name, self.infile,
                                           start=self.start_step)
         else:
-            txt = load_input_string(self.infile)
+            txt = ''
+            if self.infile:
+                txt = load_input_string(self.infile)
             run_command(self.shell, txt, self.out_name('all'), shell=True)
         self.loaded = False
     def exp_name(self, cmd):
@@ -329,7 +347,10 @@ class Corpus:
     def load(self):
         if self.loaded:
             return
-        ins = load_input(self.infile)
+        if self.infile:
+            ins = load_input(self.infile)
+        else:
+            ins = {hash_line(''): [0, '']}
         self.hashes = list(ins.keys())
         self.hashes.sort(key = lambda x: ins[x][0])
         outs = []
@@ -497,7 +518,7 @@ def load_corpora(names, static=False):
                     if p.search(k):
                         Corpus(k, blob[k])
                         break
-        except json.JSONDecoderError as e:
+        except json.JSONDecodeError as e:
             print('test/tests.json is not a valid JSON document. First error on line %s' % e.lineno)
             sys.exit(1)
 
