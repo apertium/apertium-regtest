@@ -35,8 +35,11 @@ def load_input(fname):
             lines = fin.read().splitlines()
             ret = {}
             for i, l_ in enumerate(lines):
-                # TODO: more careful escape handling
-                l = l_.split('#')[0].replace('\\n', '\n').strip()
+                ls = l_.split('#')
+                l = ls.pop(0)
+                while l.endswith('\\') and ls:
+                    l = l[:-1] + ls.pop(0)
+                l = l.replace('\\n', '\n').strip()
                 if not l:
                     continue
                 ret[hash_line(l)] = [i, l]
@@ -1002,9 +1005,12 @@ apertium-regtest has 3 modes available:
     if args.accept:
         load_corpora(args.corpus, static=True)
         for name, corp in Corpus.all_corpora.items():
-            corp.run()
-            corp.load()
-            corp.accept_add_del()
+            try:
+                corp.run()
+                corp.load()
+                corp.accept_add_del()
+            except (InputFileDoesNotExist, ErrorInPipeline):
+                sys.exit(1)
     if args.mode == 'test':
         load_corpora(args.corpus, static=True)
         try:
