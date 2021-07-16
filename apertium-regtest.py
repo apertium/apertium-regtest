@@ -926,13 +926,12 @@ def static_test(ignore_add=False):
         if not corp.loaded:
             corp.load()
             corp.run()
-        print('  %s total lines' % len(corp.data['inputs']))
         if corp.data['add']:
-            print('  %s lines added since last run' % len(corp.data['add']))
+            print('  %s tests added since last run' % len(corp.data['add']))
             if not ignore_add:
                 changed.add(name)
         if corp.data['del']:
-            print('  %s lines removed since last run' % len(corp.data['del']))
+            print('  %s tests removed since last run' % len(corp.data['del']))
             if not ignore_add:
                 changed.add(name)
         total = 0
@@ -948,17 +947,20 @@ def static_test(ignore_add=False):
                 if g:
                     gold += 1
         if total > 0:
-            print('  %s/%s (%s%%) lines pass (match expected or gold)' % (same, total, round(100.0*same/total, 2)))
+            print('  %s/%s (%s%%) tests pass' % (same, total, round(100.0*same/total, 2)), end='')
             if same != total:
                 changed.add(name)
         if same > 0:
-            print('  %s/%s (%s%%) passing lines match gold' % (gold, same, round(100.0*gold/same, 2)))
-            print('    %s/%s (%s%%) of total' % (gold, total, round(100.0*gold/total, 2)))
+            print(' (%s/%s (%s%%) match gold)' % (gold, same, round(100.0*gold/same, 2)))
+        else:
+            print('')
         print('')
     if changed:
         print('There were changes! Rerun in interactive mode to update tests.')
         print('Changed corpora: ' + ', '.join(sorted(changed)))
         return False
+    else:
+        print('All tests pass.')
     return True
 
 if __name__ == '__main__':
