@@ -924,8 +924,8 @@ def static_test(ignore_add=False):
     for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
         print('Corpus %s of %s: %s' % (i, n, name))
         if not corp.loaded:
-            corp.load()
             corp.run()
+            corp.load()
         if corp.data['add']:
             print('  %s tests added since last run' % len(corp.data['add']))
             if not ignore_add:
