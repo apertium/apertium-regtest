@@ -6,7 +6,7 @@ static_DATA = static/index.html static/regtest.css static/regtest.js \
 			  static/bootstrap.css static/bootstrap.js \
 			  static/diff.js static/jquery.js
 
-pkgconfigdir = $(libdir)/pkgconfig
+pkgconfigdir = $(prefix)/share/pkgconfig
 pkgconfig_DATA = apertium-regtest.pc
 
 install-data-hook:
