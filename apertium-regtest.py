@@ -26,6 +26,8 @@ def hash_line(s):
 
 class InputFileDoesNotExist(FileNotFoundError):
     pass
+class InputFileIsEmpty(Exception):
+    pass
 class ErrorInPipeline(Exception):
     pass
 
@@ -43,6 +45,9 @@ def load_input(fname):
                 if not l:
                     continue
                 ret[hash_line(l)] = [i, l]
+            if len(ret) == 0:
+                print('ERROR: Input file %s was empty!' % fname)
+                raise InputFileIsEmpty(fname)
             return ret
     except FileNotFoundError:
         print('ERROR: Input file %s does not exist!' % fname)
@@ -644,6 +649,9 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
             except InputFileDoesNotExist as e:
                 resp = {'error': 'Input file %s expected but not found! Server exiting.' % e.args[0]}
                 shutdown = True
+            except InputFileIsEmpty as e:
+                resp = {'error': 'Input file %s contained no data! Server exiting.' % e.args[0]}
+                shutdown = True
         elif params['a'][0] == 'run':
             try:
                 good, output = test_run(params.get('c', ['*']))
@@ -1011,14 +1019,14 @@ apertium-regtest has 3 modes available:
                 corp.run()
                 corp.load()
                 corp.accept_add_del()
-            except (InputFileDoesNotExist, ErrorInPipeline):
+            except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
                 sys.exit(1)
     if args.mode == 'test':
         load_corpora(args.corpus, static=True)
         try:
             if not static_test(args.ignore_add):
                 sys.exit(1)
-        except (InputFileDoesNotExist, ErrorInPipeline):
+        except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
             sys.exit(1)
     elif args.mode == 'web':
         load_corpora(args.corpus, static=False)
@@ -1027,7 +1035,7 @@ apertium-regtest has 3 modes available:
         load_corpora(args.corpus, static=False)
         try:
             RegtestShell(args.autosave).cmdloop()
-        except (InputFileDoesNotExist, ErrorInPipeline):
+        except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
             sys.exit(1)
     else:
         print("Unknown operation mode. Expected 'test', 'web', or 'cli'.")
