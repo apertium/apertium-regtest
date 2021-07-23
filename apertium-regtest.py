@@ -424,7 +424,8 @@ class Corpus:
     def step(self, s):
         return self.data['cmds'][self.commands.get(s, -1)]
     def get_changed_hashes(self):
-        ret = set()
+        norm = set()
+        imp = set()
         for cmd in self.relevant_commands:
             blob = self.step(cmd)
             for hsh in self.data['inputs']:
@@ -435,8 +436,13 @@ class Corpus:
                 if hsh in blob['gold']:
                     if blob['output'][hsh][1] in blob['gold'][hsh]:
                         continue
-                ret.add(hsh)
-        return sorted(ret, key = lambda x: self.data['inputs'][hsh][0])
+                norm.add(hsh)
+                if blob['relevant']:
+                    imp.add(hsh)
+        imp_ret = sorted(imp, key = lambda x: self.data['inputs'][x][0])
+        norm -= imp
+        norm_ret = sorted(norm, key = lambda x: self.data['inputs'][x][0])
+        return imp_ret + norm_ret
     def display_line(self, hsh, step=None):
         # TODO: colors, diffs
         def indent(s):
@@ -739,6 +745,7 @@ class RegtestShell(cmd.Cmd):
             else:
                 self.lines_todo[name] = corp.data['add'] + corp.data['del']
         self.lines_todo[name] += corp.get_changed_hashes()
+        # TODO: important hashes in all corpora before unimporant ones
         print('Corpus %s has %s lines to be examined.' % (name, len(self.lines_todo[name])))
     def next_hash(self, drop_prev=False):
         if drop_prev and self.current_corpus in self.lines_todo:
