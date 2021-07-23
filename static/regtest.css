@@ -2,6 +2,7 @@
 
 pre {
 	margin: 0;
+    white-space: pre-wrap;
 }
 
 .rt-table-fixed tbody {
@@ -77,19 +78,19 @@ ul.rt-gold:before {
 	margin-left: 20px;
 }
 
-.c-fst-b, .c-cg-b {
+.c-fst-b, .c-cg-b, .c-ap-l {
 	color: #880;
 }
-.c-fst-p, .c-cg-p, .c-t-t {
+.c-fst-p, .c-cg-p, .c-t-t, .c-ap-t {
 	color: #008;
 }
 .c-fst-s, .c-cg-s {
 	color: #080;
 }
-.c-fst-pl {
+.c-fst-pl, .c-ap-d {
 	color: #ccc;
 }
-.c-cg-m {
+.c-cg-m, .c-ap-u {
 	color: #800;
 }
 .c-cg-sc {
@@ -100,6 +101,9 @@ ul.rt-gold:before {
 }
 .c-cg-t {
 	color: #44F;
+}
+.c-ap-lu {
+    white-space: nowrap;
 }
 
 code {
