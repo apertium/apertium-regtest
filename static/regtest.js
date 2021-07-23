@@ -550,7 +550,6 @@ function btn_show_tab() {
             output = diff_stream(expect, text);
         } else {
 		    let diff = Diff.diffWordsWithSpace(expect, text);
-		    let output = '';
 		    for (let d=0 ; d<diff.length ; ++d) {
 			    if (diff[d].added) {
 				    output += '<ins>'+esc_html(diff[d].value)+'</ins>';
