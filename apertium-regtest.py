@@ -409,6 +409,7 @@ class Corpus:
                 {
                     'cmd': blob['cmd'],
                     'opt': blob['opt'],
+                    'relevant': blob['relevant'],
                     'output': hf(blob['output']),
                     'expect': hf(blob['expect']),
                     'gold': hf(blob['gold']),

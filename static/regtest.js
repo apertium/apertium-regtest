@@ -134,7 +134,7 @@ function hilite_output(t, f) {
             return ret;
         });
         t = t.replace(/((?:&lt;\w+&gt;)+)/g, '<span class="c-ap-t">$1</span>');
-        t = t.replace(/(\$|\{)/g, '<span class="c-ap-d">$1</span>');
+        t = t.replace(/(\$|\{|\})/g, '<span class="c-ap-d">$1</span>');
     }
 
 	return t;
