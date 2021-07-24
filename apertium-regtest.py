@@ -59,21 +59,24 @@ def load_input_string(fname):
         txt += '[%s#%s] %s\n[/%s]\n\0' % (hsh, line, content, hsh)
     return txt
 
-# [hash#line] content [/hash]
-txt_out_format = re.compile(r'\[([A-Za-z0-9_-]+)#(\d+)\](.*)\[/\1\]', re.DOTALL)
-# [hash] content [/hash]
-txt_gold_format = re.compile(r'\[([A-Za-z0-9_-]+)\](.*)\[/\1\]', re.DOTALL)
+# [hash(#line)?] content [/hash]
+hash_format = re.compile(r'\[([A-Za-z0-9_-]+)(#\d+|)\](.*)\[/\1\]', re.DOTALL)
+# the line number is completely useless, but it now appears
+# in the expected files in 365 repositories, so we need to still
+# parse it - 2021-07-23
 
 def load_output(fname):
     try:
         with open(fname, 'r') as fin:
             ret = {}
             txt = fin.read().replace('\0', '')
-            for hsh, line, content_ in txt_out_format.findall(txt):
+            for hsh, line, content_ in hash_format.findall(txt):
                 content = content_.strip()
                 if not content:
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
-                ret[hsh] = [int(line), content]
+                ret[hsh] = [0, content]
+                # TODO:
+                # ret[hsh] = content
             return ret
     except FileNotFoundError:
         return {}
@@ -87,7 +90,7 @@ def load_gold(fname):
     try:
         with open(fname, 'r') as fin:
             ret = {}
-            for hsh, content in txt_gold_format.findall(fin.read()):
+            for hsh, line, content in hash_format.findall(fin.read()):
                 opts = []
                 for o in content.split('[/option]'):
                     o2 = o.strip()
