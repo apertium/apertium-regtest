@@ -74,9 +74,12 @@ def load_output(fname):
                 content = content_.strip()
                 if not content:
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
-                ret[hsh] = [0, content]
-                # TODO:
-                # ret[hsh] = content
+                l = 0
+                if line:
+                    l = int(l[1:])
+                ret[hsh] = [l, content]
+                # line numbers are nice for debugging,
+                # but nothing breaks if we don't have them
             return ret
     except FileNotFoundError:
         return {}
