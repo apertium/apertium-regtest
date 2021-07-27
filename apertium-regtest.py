@@ -76,7 +76,7 @@ def load_output(fname):
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
                 l = 0
                 if line:
-                    l = int(l[1:])
+                    l = int(line[1:])
                 ret[hsh] = [l, content]
                 # line numbers are nice for debugging,
                 # but nothing breaks if we don't have them
