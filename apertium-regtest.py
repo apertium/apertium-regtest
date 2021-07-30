@@ -813,6 +813,13 @@ Abbreviated form: `a`'''
         if self.current_corpus and self.current_hash:
             self.lines_accepted[self.current_corpus].append(self.current_hash)
         self.next_hash(True)
+    def do_k(self, arg):
+        'Synonym for `skip`'
+        self.do_skip('')
+    def do_skip(self, arg):
+        '''Move to the next changed line.
+Abbreviated form: `k`'''
+        self.next_hash(True)
     def do_ag(self, arg):
         'Synonym for `addgold`'
         self.do_addgold('')
@@ -935,9 +942,10 @@ def check_hash(corpus, hsh):
         gld = data['gold'].get(hsh, [])
         if out in gld:
             continue
-        gold = False
-        if out != exp:
-            expect = False
+        else:
+            gold = False
+            if out != exp:
+                expect = False
     return expect, gold
 
 def static_test(ignore_add=False):
