@@ -144,6 +144,11 @@ def run_command(cmd, intxt, outfile, shell=False):
                 stdout += ('\n[/%s]\n' % h).encode('utf-8')
             fout.write(stdout)
 
+def ensure_dir_exists(name):
+    pth = os.path.join('test', name)
+    if not os.path.isdir(pth):
+        os.mkdir(pth)
+
 class Step:
     prognames = {
         'cg-proc': 'disam',
@@ -219,11 +224,17 @@ class Mode:
                 s.name += str(nm[s.name])
             self.commands[s.name] = i
         Mode.all_modes[self.name] = self
-    def run(self, corpusname, filename, start=None):
+    def run(self, corpusname, filename, start=None, flat=True):
+        fname = 'test/'
+        if flat:
+            fname += '%s-%s-output.txt'
+        else:
+            ensure_dir_exists('output')
+            fname += 'output/%s-%s.txt'
         fin = filename
         idx = self.commands.get(start, 0)
         for i, step in enumerate(self.steps[idx:]):
-            fout = 'test/%s-%s-output.txt' % (corpusname, step.name)
+            fout = fname % (corpusname, step.name)
             step.run(fin, fout, first=(i == 0))
             fin = fout
     def get_commands(self):
@@ -299,6 +310,7 @@ def check_git():
         sys.exit(1)
 
 class Corpus:
+    flat = True
     all_corpora = {}
     def __init__(self, name, blob):
         self.name = name
@@ -340,7 +352,8 @@ class Corpus:
     def run(self):
         if self.mode:
             Mode.all_modes[self.mode].run(self.name, self.infile,
-                                          start=self.start_step)
+                                          start=self.start_step,
+                                          flat=Corpus.flat)
         else:
             txt = ''
             if self.infile:
@@ -348,12 +361,23 @@ class Corpus:
             run_command(self.shell, txt, self.out_name('all'), shell=True)
         self.loaded = False
     def exp_name(self, cmd):
-        return 'test/%s-%s-expected.txt' % (self.name, cmd)
+        if Corpus.flat:
+            return 'test/%s-%s-expected.txt' % (self.name, cmd)
+        else:
+            return 'test/expected/%s-%s.txt' % (self.name, cmd)
     def out_name(self, cmd):
-        return 'test/%s-%s-output.txt' % (self.name, cmd)
+        if Corpus.flat:
+            return 'test/%s-%s-output.txt' % (self.name, cmd)
+        else:
+            return 'test/output/%s-%s.txt' % (self.name, cmd)
     def gold_name(self, cmd):
-        return 'test/%s-%s-gold.txt' % (self.name, cmd)
+        if Corpus.flat:
+            return 'test/%s-%s-gold.txt' % (self.name, cmd)
+        else:
+            return 'test/gold/%s-%s.txt' % (self.name, cmd)
     def save(self):
+        if not Corpus.flat:
+            ensure_dir_exists('expected')
         for blob in self.data['cmds']:
             if blob['cmd'] in self.unsaved:
                 save_output(self.exp_name(blob['cmd']), blob['expect'])
@@ -380,6 +404,8 @@ class Corpus:
             if os.path.isfile(expfile):
                 expdata = load_output(expfile)
             else:
+                if not Corpus.flat:
+                    ensure_dir_exists('expected')
                 save_output(expfile, outdata)
                 expdata = outdata
             golddata = {}
@@ -514,6 +540,8 @@ class Corpus:
     def set_gold(self, hsh, vals, step=None):
         blob = self.step(step)
         blob['gold'][hsh] = vals
+        if not Corpus.flat:
+            ensure_dir_exists('gold')
         save_gold(self.gold_name(blob['cmd']), blob['gold'])
 
 def load_corpora(names, static=False):
@@ -535,6 +563,9 @@ def load_corpora(names, static=False):
         try:
             blob = json.load(ts)
             for k in blob:
+                if k == 'settings':
+                    Corpus.flat = (blob[k].get('structure', 'flat') != 'nested')
+                    continue
                 for p in pats:
                     if p.search(k):
                         Corpus(k, blob[k])
