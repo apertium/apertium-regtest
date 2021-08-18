@@ -37,6 +37,29 @@ function esc_regex(t) {
 	return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// From https://gist.github.com/victornpb/7736865
+function occurrences(string, subString, allowOverlapping) {
+	if (subString.length <= 0) {
+		return string.length + 1;
+	}
+
+	let n = 0;
+	let pos = 0;
+	let step = allowOverlapping ? 1 : subString.length;
+
+	while (true) {
+		pos = string.indexOf(subString, pos);
+		if (pos >= 0) {
+			++n;
+			pos += step;
+		}
+		else {
+			break;
+		}
+	}
+	return n;
+}
+
 function detect_format(t) {
 	let f = 'plain';
 	if (/(^|\n)"<[^\n\t]+>"/.test(t) && /(^|\n);?\t"[^\n\t]+"/.test(t)) {
@@ -48,9 +71,9 @@ function detect_format(t) {
 	else if (/\S+\t[^+\s]+\+[^+\s]+/.test(t)) {
 		f = 'fst';
 	}
-    else if (/\^.*\$/.test(t)) {
-        f = 'ap';
-    }
+	else if (/\^.*\$/.test(t)) {
+		f = 'ap';
+	}
 	return f;
 }
 
@@ -125,169 +148,169 @@ function hilite_output(t, f) {
 	else if (f === 'transfer') {
 		t = t.replace(/(\[[^\n]+?\] \.\.\. [^\n]+)/g, '<span class="c-t-t">$1</span>');
 	}
-    else if (f == "ap") {
-        //t = t.replace(/(\^|\/)(.+?)(?=\$|\/|&lt;)/g, '<span class="c-ap-d">$1</span><span class="c-ap-l">$2</span>');
-        t = t.replace(/(\^|\/)(.+?)(?=\$|\/|&lt;)/g, function(m, d, lm) {
-            let ret = '<span class="c-ap-d">'+d+'</span><span class="c-ap-';
-            ret += (lm[0] == '*' ? 'u' : 'l');
-            ret += '">'+lm+'</span>';
-            return ret;
-        });
-        t = t.replace(/((?:&lt;\w+&gt;)+)/g, '<span class="c-ap-t">$1</span>');
-        t = t.replace(/(\$|\{|\})/g, '<span class="c-ap-d">$1</span>');
-    }
+	else if (f == "ap") {
+		//t = t.replace(/(\^|\/)(.+?)(?=\$|\/|&lt;)/g, '<span class="c-ap-d">$1</span><span class="c-ap-l">$2</span>');
+		t = t.replace(/(\^|\/)(.+?)(?=\$|\/|&lt;)/g, function(m, d, lm) {
+			let ret = '<span class="c-ap-d">'+d+'</span><span class="c-ap-';
+			ret += (lm[0] == '*' ? 'u' : 'l');
+			ret += '">'+lm+'</span>';
+			return ret;
+		});
+		t = t.replace(/((?:&lt;\w+&gt;)+)/g, '<span class="c-ap-t">$1</span>');
+		t = t.replace(/(\$|\{|\})/g, '<span class="c-ap-d">$1</span>');
+	}
 
 	return t;
 }
 
 function tokenize_stream(s) {
-    let ret = [];
-    let cur = "";
-    let esc = false;
-    let word = false;
-    let blank = false;
-    let wblank = false;
-    for (let i = 0; i < s.length; i++) {
-        if (esc) {
-            esc = false;
-        } else if (s[i] == '\\') {
-            esc = true;
-        } else if (wblank) {
-            if (s[i] == ']' && i+1 < s.length && s[i+1] == ']') {
-                wblank = false;
-            }
-        } else if (blank) {
-            if (s[i] == ']') {
-                blank = false;
-            }
-        } else if (!word && s[i] == '[') {
-            blank = true;
-            if (i+1 < s.length && s[i+1] == '[') {
-                wblank = true;
-            }
-        } else if (!word && s[i] == '^' || s[i] == '}') {
-            word = true;
-            if (cur.length) {
-                ret.push(cur);
-                cur = "";
-            }
-        } else if (word && s[i] == '$' || s[i] == '{') {
-            cur += s[i];
-            ret.push(cur);
-            cur = "";
-            word = false;
-            continue;
-        }
-        cur += s[i];
-    }
-    if (cur.length) {
-        ret.push(cur);
-    }
-    return ret;
+	let ret = [];
+	let cur = "";
+	let esc = false;
+	let word = false;
+	let blank = false;
+	let wblank = false;
+	for (let i = 0; i < s.length; i++) {
+		if (esc) {
+			esc = false;
+		} else if (s[i] == '\\') {
+			esc = true;
+		} else if (wblank) {
+			if (s[i] == ']' && i+1 < s.length && s[i+1] == ']') {
+				wblank = false;
+			}
+		} else if (blank) {
+			if (s[i] == ']') {
+				blank = false;
+			}
+		} else if (!word && s[i] == '[') {
+			blank = true;
+			if (i+1 < s.length && s[i+1] == '[') {
+				wblank = true;
+			}
+		} else if (!word && s[i] == '^' || s[i] == '}') {
+			word = true;
+			if (cur.length) {
+				ret.push(cur);
+				cur = "";
+			}
+		} else if (word && s[i] == '$' || s[i] == '{') {
+			cur += s[i];
+			ret.push(cur);
+			cur = "";
+			word = false;
+			continue;
+		}
+		cur += s[i];
+	}
+	if (cur.length) {
+		ret.push(cur);
+	}
+	return ret;
 }
 
 function tokenize_lu(s) {
-    let ret = [];
-    let cur = '';
-    let esc = false;
-    for (let i = 0; i < s.length; i++) {
-        if (esc) {
-        } else if (s[i] == '\\') {
-            esc = true;
-        } else if (s[i] == '/') {
-            ret.push(cur);
-            cur = '';
-        }
-        cur += s[i];
-    }
-    ret.push(cur);
-    return ret;
+	let ret = [];
+	let cur = '';
+	let esc = false;
+	for (let i = 0; i < s.length; i++) {
+		if (esc) {
+		} else if (s[i] == '\\') {
+			esc = true;
+		} else if (s[i] == '/') {
+			ret.push(cur);
+			cur = '';
+		}
+		cur += s[i];
+	}
+	ret.push(cur);
+	return ret;
 }
 
 function diff_lus(del_obj, add_obj) {
-    if (add_obj.removed) {
-        return diff_lus(add_obj, del_obj);
-    }
-    let del = del_obj.value;
-    let add = add_obj.value;
-    let out = '';
-    for (let i = 0; i < del.length; i++) {
-        if (del[i][0] == '^' && add[i][0] == '^') {
-            out += '<span class="c-ap-lu">';
-            let arr_d = tokenize_lu(del[i]);
-            let arr_a = tokenize_lu(add[i]);
-            let diff = Diff.diffArrays(arr_d, arr_a);
-            for (let d = 0; d < diff.length; d++) {
-                if (diff[d].added) {
-                    out += '<ins>';
-                    out += esc_html(diff[d].value.join(''));
-                    out += '</ins>';
-                } else if (diff[d].removed) {
-                    out += '<del>';
-                    out += esc_html(diff[d].value.join(''));
-                    out += '</del>';
-                } else {
-                    for (let j = 0; j < diff[d].value.length; j++) {
-                        out += hilite_output(diff[d].value[j], 'ap');
-                    }
-                }
-            }
-            out += '</span>';
-        } else {
-            out += '<del>'+esc_html(del[i])+'</del>';
-            out += '<ins>'+esc_html(add[i])+'</ins>';
-        }
-    }
-    return out;
+	if (add_obj.removed) {
+		return diff_lus(add_obj, del_obj);
+	}
+	let del = del_obj.value;
+	let add = add_obj.value;
+	let out = '';
+	for (let i = 0; i < del.length; i++) {
+		if (del[i][0] == '^' && add[i][0] == '^') {
+			out += '<span class="c-ap-lu">';
+			let arr_d = tokenize_lu(del[i]);
+			let arr_a = tokenize_lu(add[i]);
+			let diff = Diff.diffArrays(arr_d, arr_a);
+			for (let d = 0; d < diff.length; d++) {
+				if (diff[d].added) {
+					out += '<ins>';
+					out += esc_html(diff[d].value.join(''));
+					out += '</ins>';
+				} else if (diff[d].removed) {
+					out += '<del>';
+					out += esc_html(diff[d].value.join(''));
+					out += '</del>';
+				} else {
+					for (let j = 0; j < diff[d].value.length; j++) {
+						out += hilite_output(diff[d].value[j], 'ap');
+					}
+				}
+			}
+			out += '</span>';
+		} else {
+			out += '<del>'+esc_html(del[i])+'</del>';
+			out += '<ins>'+esc_html(add[i])+'</ins>';
+		}
+	}
+	return out;
 }
 
 function diff_stream(exp, txt) {
-    let arr_e = tokenize_stream(exp);
-    let arr_t = tokenize_stream(txt);
-    let diff = Diff.diffArrays(arr_e, arr_t);
-    let output = '';
-    for (let n = 0; n < diff.length; n++) {
-        if (diff[n].added || diff[n].removed) {
-            if (n + 1 < diff.length && (diff[n+1].added || diff[n+1].removed)
-                && diff[n+1].value.length == diff[n].value.length) {
-                output += diff_lus(diff[n], diff[n+1]);
-                n++;
-            } else {
-                output += (diff[n].added ? '<ins>' : '<del>');
-                for (let n2 = 0; n2 < diff[n].value.length; n2++) {
-                    if (diff[n].value[n2][0] == '^') {
-                        output += '<span class="c-ap-lu">';
-                    }
-                    output += esc_html(diff[n].value[n2]);
-                    if (diff[n].value[n2][0] == '^') {
-                        output += '</span>';
-                    }
-                }
-                output += (diff[n].added ? '</ins>' : '</del>');
-            }
-        } else {
-            let collapse = -1;
-            if (diff[n].value.length > 15) {
-                collapse = diff[n].value.length - 3;
-            }
-            for (let n2 = 0; n2 < diff[n].value.length; n2++) {
-                if (diff[n].value[n2][0] == '^') {
-                    output += '<span class="c-ap-lu">';
-                }
-                output += hilite_output(esc_html(diff[n].value[n2]), 'ap');
-                if (diff[n].value[n2][0] == '^') {
-                    output += '</span>';
-                }
-                if (collapse != -1 && n2 == 2) {
-                    output += '<div class="rt-expansion"><span class="rt-expanded">';
-                }
-                else if (n2 == collapse) {
-                    output += '</span><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnExpand">…</button><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnCollapse">…</button></div>';
-                }
-            }
-        }
-    }
-    return output;
+	let arr_e = tokenize_stream(exp);
+	let arr_t = tokenize_stream(txt);
+	let diff = Diff.diffArrays(arr_e, arr_t);
+	let output = '';
+	for (let n = 0; n < diff.length; n++) {
+		if (diff[n].added || diff[n].removed) {
+			if (n + 1 < diff.length && (diff[n+1].added || diff[n+1].removed)
+				&& diff[n+1].value.length == diff[n].value.length) {
+				output += diff_lus(diff[n], diff[n+1]);
+				n++;
+			} else {
+				output += (diff[n].added ? '<ins>' : '<del>');
+				for (let n2 = 0; n2 < diff[n].value.length; n2++) {
+					if (diff[n].value[n2][0] == '^') {
+						output += '<span class="c-ap-lu">';
+					}
+					output += esc_html(diff[n].value[n2]);
+					if (diff[n].value[n2][0] == '^') {
+						output += '</span>';
+					}
+				}
+				output += (diff[n].added ? '</ins>' : '</del>');
+			}
+		} else {
+			let collapse = -1;
+			if (diff[n].value.length > 15) {
+				collapse = diff[n].value.length - 3;
+			}
+			for (let n2 = 0; n2 < diff[n].value.length; n2++) {
+				if (diff[n].value[n2][0] == '^') {
+					output += '<span class="c-ap-lu">';
+				}
+				output += hilite_output(esc_html(diff[n].value[n2]), 'ap');
+				if (diff[n].value[n2][0] == '^') {
+					output += '</span>';
+				}
+				if (collapse != -1 && n2 == 2) {
+					output += '<div class="rt-expansion"><span class="rt-expanded">';
+				}
+				else if (n2 == collapse) {
+					output += '</span><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnExpand">…</button><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnCollapse">…</button></div>';
+				}
+			}
+		}
+	}
+	return output;
 }
 
 function ajax_fail(e) {
@@ -397,8 +420,8 @@ function btn_gold_replace() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
 	let h = tr.attr('data-hash');
-    let s = tr.find('.nav-link.active').text();
-    let gs = [tr.find('.rt-output.active').attr('data-output')];
+	let s = tr.find('.nav-link.active').text();
+	let gs = [tr.find('.rt-output.active').attr('data-output')];
 	let tid = toast('Replacing Gold', 'Corpus '+c+' sentence '+h+' step '+s);
 	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
 }
@@ -407,9 +430,9 @@ function btn_gold_add() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
 	let h = tr.attr('data-hash');
-    let s = tr.find('.nav-link.active').text();
+	let s = tr.find('.nav-link.active').text();
 	let gs = [];
-    let gold = state[c].cmds[state[c].cmds.length-1].gold;
+	let gold = state[c].cmds[state[c].cmds.length-1].gold;
 	if (gold.hasOwnProperty(h)) {
 		gs = gold[h];
 	}
@@ -540,39 +563,45 @@ function btn_show_tab() {
 	let type = div.attr('data-type');
 	let text = div.attr('data-output');
 	let expect = div.attr('data-expect');
-    if (!type || type === 'auto' || type === 'undefined') {
-        type = detect_format(text);
-    }
+	if (!type || type === 'auto' || type === 'undefined') {
+		type = detect_format(text);
+	}
 
 	if (expect) {
-        let output = '';
-        if (type === 'ap') {
-            output = diff_stream(expect, text);
-        } else {
-		    let diff = Diff.diffWordsWithSpace(expect, text);
-		    for (let d=0 ; d<diff.length ; ++d) {
-			    if (diff[d].added) {
-				    output += '<ins>'+esc_html(diff[d].value)+'</ins>';
-			    }
-			    else if (diff[d].removed) {
-				    output += '<del>'+esc_html(diff[d].value)+'</del>';
-			    }
-			    else {
-				    let val = esc_html(diff[d].value);
-				    if (/\n([^\n]+\n){6}/.test(val)) {
-					    let ls = val.split("\n");
-					    val = hilite_output(ls[0]+"\n"+ls[1]+"\n"+ls[2]+"\n", type);
-					    val += '<div class="rt-expansion"><span class="rt-expanded">'+hilite_output(ls.slice(3, -3).join("\n"), type)+'</span><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnExpand">…</button><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnCollapse">…</button></div>';
-					    val += hilite_output(ls[ls.length-3]+"\n"+ls[ls.length-2]+"\n"+ls[ls.length-1], type);
-				    }
-				    else {
-					    val = hilite_output(val, type);
-				    }
+		let output = '';
+		if (type === 'ap') {
+			output = diff_stream(expect, text);
+		} else {
+			let diff = null;
+			if (occurrences(expect, '\n') >= 100) {
+				diff = Diff.diffLines(expect, text);
+			}
+			else {
+				diff = Diff.diffWordsWithSpace(expect, text);
+			}
+			for (let d=0 ; d<diff.length ; ++d) {
+				if (diff[d].added) {
+					output += '<ins>'+esc_html(diff[d].value)+'</ins>';
+				}
+				else if (diff[d].removed) {
+					output += '<del>'+esc_html(diff[d].value)+'</del>';
+				}
+				else {
+					let val = esc_html(diff[d].value);
+					if (/\n([^\n]+\n){6}/.test(val)) {
+						let ls = val.split("\n");
+						val = hilite_output(ls[0]+"\n"+ls[1]+"\n"+ls[2]+"\n", type);
+						val += '<div class="rt-expansion"><span class="rt-expanded">'+hilite_output(ls.slice(3, -3).join("\n"), type)+'</span><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnExpand">…</button><button tabindex="-1" type="button" class="btn btn-outline-secondary btn-sm btnCollapse">…</button></div>';
+						val += hilite_output(ls[ls.length-3]+"\n"+ls[ls.length-2]+"\n"+ls[ls.length-1], type);
+					}
+					else {
+						val = hilite_output(val, type);
+					}
 				output += val;
-			    }
-		    }
-        }
-        $(div).find('pre').html(output);
+				}
+			}
+		}
+		$(div).find('pre').html(output);
 		div.removeAttr('data-expect');
 		div.find('.rt-expanded').hide();
 		div.find('.btnExpand').off().click(btn_expand);
@@ -585,20 +614,27 @@ function btn_show_tab() {
 	$(this).attr('data-hilite', true);
 }
 
+function click_and_show(e) {
+	e.click();
+	bootstrap.Tab.getOrCreateInstance(e.get(0)).show();
+}
+
 function btn_select_tab() {
 	let which = $(this).attr('data-which');
 	if (which === '*FIRST') {
 		$('.rt-changes').find('tr').filter(':visible').each(function() {
-			$(this).find('a.rt-changed').first().click();
+			click_and_show($(this).find('a.rt-changed').first());
 		});
 	}
 	else if (which === '*LAST') {
 		$('.rt-changes').find('tr').filter(':visible').each(function() {
-			$(this).find('a.rt-changed').last().click();
+			click_and_show($(this).find('a.rt-changed').last());
 		});
 	}
 	else {
-		$('.rt-tab-'+which).filter(':visible').click();
+		$('.rt-tab-'+which).filter(':visible').each(function() {
+			click_and_show($(this));
+		});
 	}
 
 	if (which === '*FIRST' || which === '*LAST') {
@@ -747,7 +783,7 @@ function cb_load(rv) {
 			let body = '<div class="tab-content">';
 
 			let id = c+'-'+k+'-input';
-            body += '<pre class="rt-input">'+esc_html(ins[k][1])+'</pre>';
+			body += '<pre class="rt-input">'+esc_html(ins[k][1])+'</pre>';
 
 			for (let i=0 ; i<cmds.length ; ++i) {
 				let cmd = cmds[i];
@@ -768,12 +804,12 @@ function cb_load(rv) {
 					}
 					style += ' rt-changed';
 					changed = true;
-                    if (cmd.gold.hasOwnProperty(k) && cmd.gold[k].indexOf(cmd.output[k][1]) != -1) {
+					if (cmd.gold.hasOwnProperty(k) && cmd.gold[k].indexOf(cmd.output[k][1]) != -1) {
 						style += ' rt-gold';
 					} else if (cmd.relevant) {
-                        changed_result = ' rt-changed-result';
-                        bucket = 'changed_end';
-                    }
+						changed_result = ' rt-changed-result';
+						bucket = 'changed_end';
+					}
 
 					expect = ' data-expect="'+esc_html(cmd.expect[k][1])+'"';
 				}
@@ -793,15 +829,15 @@ function cb_load(rv) {
 				nav += '<li class="nav-item"><a tabindex="-1" class="nav-link rt-tab-'+cmd.opt+style+'" id="'+id+'-tab" data-bs-toggle="tab" href="#'+id+'" role="tab">'+cmd.opt+'</a></li>';
 				body += '<div class="tab-pane'+style+' rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'"'+expect+' data-output="'+output+'"><pre>'+output+'</pre>';
 
-                if (cmd.gold.hasOwnProperty(k)) {
-                    let ul = '<ul class="list-group rt-gold">';
-                    for (let g = 0; g < cmd.gold[k].length; g++) {
-                        ul += '<li class="list-group-item">'+esc_html(cmd.gold[k][g])+'</li>';
-                    }
-                    ul += '</ul>';
-                    body += ul;
-                }
-                body += '</div>';
+				if (cmd.gold.hasOwnProperty(k)) {
+					let ul = '<ul class="list-group rt-gold">';
+					for (let g = 0; g < cmd.gold[k].length; g++) {
+						ul += '<li class="list-group-item">'+esc_html(cmd.gold[k][g])+'</li>';
+					}
+					ul += '</ul>';
+					body += ul;
+				}
+				body += '</div>';
 
 				if (cmd.trace.hasOwnProperty(k)) {
 					let id = c+'-'+k+'-'+cmd.opt+'-trace';
