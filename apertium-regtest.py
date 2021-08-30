@@ -197,10 +197,11 @@ class Step:
                     if op in self.args:
                         self.name = Step.morphmodes[op]
     def run(self, in_name, out_name, first=False):
-        cmd = [self.prog] + self.args
+        cmd = [self.prog]
         if self.prog in Step.prognames or self.prog in ['lt-proc', 'hfst-proc']:
             if self.prog not in ['cg-conv', 'vislcg3']:
                 cmd.append('-z')
+        cmd += self.args # -z needs to be before file names
         txt = ''
         if first:
             txt = load_input_string(in_name)
