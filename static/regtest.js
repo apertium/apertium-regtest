@@ -728,6 +728,9 @@ function cb_load(rv) {
 	$('.rt-pages').html(pages);
 	$('.rt-page').click(btn_page);
 
+	let add_html = '';
+	let del_html = '';
+
 	corpora.forEach(function(c) {
 		state[c].changed_end = '';
 		state[c].changed_any = '';
@@ -740,24 +743,12 @@ function cb_load(rv) {
 		let del = state[c].del;
 
 		if (add.length) {
-			let html = '<tbody class="corp corp-'+c+'"><tr><th colspan="2">Corpus: '+c+'</th></tr>';
-			for (let i=0 ; i<add.length ; ++i) {
-				html += '<tr class="hash-'+add[i][0]+'"><td>'+add[i][1]+'</td><td>'+esc_html(to_plain(add[i][2]))+'</td></tr>';
-			}
-			html += '</tbody>';
-			$('#rt-added').append(html);
-			$('.rt-added,.rt-add-del-warn').show();
+			add_html += '<tr><td>'+c+'</td><td>'+add.length+'</td><td>'+add.join(' ')+'</td></tr>';
 			nd_corps[c] = true;
 		}
 
 		if (del.length) {
-			let html = '<tbody class="corp corp-'+c+'"><tr><th>Corpus: '+c+'</th></tr>';
-			for (let i=0 ; i<del.length ; ++i) {
-				html += '<tr class="hash-'+del[i][0]+'"><td>'+esc_html(to_plain(del[i][1], cmds[0].type))+'</td></tr>';
-			}
-			html += '</tbody>';
-			$('#rt-deleted').append(html);
-			$('.rt-deleted,.rt-add-del-warn').show();
+			del_html += '<tr><td>'+c+'</td><td>'+del.length+'</td><td>'+del.join(' ')+'</td></tr>';
 			nd_corps[c] = true;
 		}
 
@@ -858,6 +849,17 @@ function cb_load(rv) {
 			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1"><button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnDiffBoth">Diff</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnDiffIns">Inserted</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnDiffDel">Deleted</button> &nbsp; <button tabindex="-1" type="button" class="btn btn-sm btn-outline-success btnAcceptUntil">…</button> <span class="rtGold">&nbsp; <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldReplace">Replace as Gold</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldAdd">Add as Gold</button></span> &nbsp; <button tabindex="-1" type="button" class="btn btn-sm btn-outline-success btnAccept">Accept Result</button> <input type="checkbox" class="mx-2 align-middle rt-change-tick"></div></td></tr>'+"\n";
 		}
 	});
+
+	if (add_html) {
+		add_html = '<tbody class="corp"><tr><th>Corpus</th><th>Added Lines</th><th>Hashes</th></tr>' + add_html + '</tbody>';
+		$('#rt-added').append(add_html);
+		$('.rt-added,.rt-add-del-warn').show();
+	}
+	if (del_html) {
+		del_html = '<tbody class="corp"><tr><th>Corpus</th><th>Deleted Lines</th><th>Hashes</th></tr>' + del_html + '</tbody>';
+		$('#rt-deleted').append(del_html);
+		$('.rt-deleted,.rt-add-del-warn').show();
+	}
 
 	$('#rt-corpora-tabs').html(tabs_html);
 
