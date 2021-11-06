@@ -370,6 +370,19 @@ function btn_filter() {
 	$(this).addClass('active');
 }
 
+function btn_filter_gold() {
+	let which = $(this).attr('data-which');
+	console.log('Filtering by criterion '+which);
+	if (which === '*') {
+		$('.rt-filter-all').show();
+	} else {
+		$('.rt-filter-all').hide();
+		$('.rt-filter-'+which).show();
+	}
+	$('.btnFilterGold').removeClass('active');
+	$(this).addClass('active');
+}
+
 function btn_run() {
 	let c = $(this).attr('data-which');
 	let tid = toast('Running Test', 'Launching regression test for: '+c+'<br>Check your terminal for progress.');
@@ -724,6 +737,7 @@ function cb_init(rv) {
 
 	$('.btnFilter').off().click(btn_filter);
 	$('.btnRun').off().click(btn_run);
+	$('.btnFilterGold').off().click(btn_filter_gold);
 }
 
 function cb_load(rv) {
@@ -801,6 +815,9 @@ function cb_load(rv) {
 			let id = c+'-'+k+'-input';
 			body += '<pre class="rt-input">'+esc_html(ins[k][1])+'</pre>';
 
+			let filter_no_gold = true;
+			let filter_unmatched_gold = false;
+
 			for (let i=0 ; i<cmds.length ; ++i) {
 				let cmd = cmds[i];
 				if (!cmd.output.hasOwnProperty(k)) {
@@ -833,6 +850,13 @@ function cb_load(rv) {
 					style += ' rt-last-tab';
 					if (!changed) {
 						style += ' show active';
+					}
+				}
+
+				if (cmd.gold.hasOwnProperty(k) && cmd.gold[k].length) {
+					filter_no_gold = false;
+					if (cmd.gold[k].indexOf(cmd.output[k][1]) == -1) {
+						filter_unmatched_gold = true;
 					}
 				}
 
@@ -883,7 +907,14 @@ function cb_load(rv) {
 				["success btnAccept", "Accept Result", " "]
 			];
 
-			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1">'
+			let filter_class = 'rt-filter-all';
+			if (filter_no_gold) {
+				filter_class += ' rt-filter-no-gold';
+			}
+			if (filter_unmatched_gold) {
+				filter_class += ' rt-filter-unmatched-gold';
+			}
+			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' '+filter_class+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1">'
 			state[c][bucket] += btn_types.map(function(b) {
 				return '<button tabindex="-1" type="button" class="btn btn-sm btn-outline-'+b[0]+'">'+b[1]+'</button>'+b[2];
 			}).join('');
