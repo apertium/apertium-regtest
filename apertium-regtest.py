@@ -707,7 +707,11 @@ class CallbackRequestHandler(http.server.SimpleHTTPRequestHandler):
                 shutdown = True
         elif params['a'][0] == 'accept-nd':
             resp['c'] = params['c'][0]
-            resp['hs'] = Corpus.all_corpora[resp['c']].accept_add_del()
+            try:
+                resp['hs'] = Corpus.all_corpora[resp['c']].accept_add_del()
+            except KeyError:
+                resp = {'error': "Must run regression tests for corpus '%s' before accepting additions (with `make test` or the button at the top of the page)." % params['c'][0]}
+                status = HTTPStatus.PRECONDITION_FAILED
         elif params['a'][0] == 'accept':
             resp['c'] = params['c'][0]
             s = params.get('s', [None])[0]

@@ -441,6 +441,31 @@ function btn_gold_add() {
 	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
 }
 
+function btn_gold_new() {
+	let tr = $(this).closest('tr');
+	tr.find('.rt-gold-input').show();
+}
+
+function btn_gold_new_accept() {
+	let tr = $(this).closest('tr');
+	let c = tr.attr('data-corp');
+	let h = tr.attr('data-hash');
+	let s = tr.find('.nav-link.active').text();
+	let gs = [];
+	let gold = state[c].cmds[state[c].cmds.length-1].gold;
+	if (gold.hasOwnProperty(h)) {
+		gs = gold[h];
+	}
+	gs.push(tr.find('.rt-gold-input-box').val());
+	let tid = toast('Adding Gold', 'Corpus '+c+' sentence '+h+' step '+s);
+	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
+}
+
+function btn_gold_new_cancel() {
+	let tr = $(this).closest('tr');
+	tr.find('.rt-gold-input').hide();
+}
+
 function btn_accept() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
@@ -743,12 +768,12 @@ function cb_load(rv) {
 		let del = state[c].del;
 
 		if (add.length) {
-			add_html += '<tr><td>'+c+'</td><td>'+add.length+'</td><td>'+add.join(' ')+'</td></tr>';
+			add_html += '<tr class="corp-'+c+'"><td>'+c+'</td><td>'+add.length+'</td><td>'+add.join(' ')+'</td></tr>';
 			nd_corps[c] = true;
 		}
 
 		if (del.length) {
-			del_html += '<tr><td>'+c+'</td><td>'+del.length+'</td><td>'+del.join(' ')+'</td></tr>';
+			del_html += '<tr class="corp-'+c+'"><td>'+c+'</td><td>'+del.length+'</td><td>'+del.join(' ')+'</td></tr>';
 			nd_corps[c] = true;
 		}
 
@@ -846,7 +871,23 @@ function cb_load(rv) {
 				changed_result = ' rt-unchanged';
 			}
 
-			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1"><button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnDiffBoth">Diff</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnDiffIns">Inserted</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnDiffDel">Deleted</button> &nbsp; <button tabindex="-1" type="button" class="btn btn-sm btn-outline-success btnAcceptUntil">…</button> <span class="rtGold">&nbsp; <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldReplace">Replace as Gold</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldAdd">Add as Gold</button></span> &nbsp; <button tabindex="-1" type="button" class="btn btn-sm btn-outline-success btnAccept">Accept Result</button> <input type="checkbox" class="mx-2 align-middle rt-change-tick"></div></td></tr>'+"\n";
+			let btn_types = [
+				// class, label, trailing space
+				["primary btnDiffBoth", "Diff", " "],
+				["primary btnDiffIns", "Inserted", " "],
+				["primary btnDiffDel", "Deleted", " &nbsp; "],
+				["success btnAcceptUntil", "…", ' <span class="rtGold">&nbsp; '],
+				["warning btnGoldReplace", "Replace as Gold", " "],
+				["warning btnGoldAdd", "Add as Gold", " "],
+				["warning btnGoldNew", "Add New Gold", "</span> &nbsp; "],
+				["success btnAccept", "Accept Result", " "]
+			];
+
+			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1">'
+			state[c][bucket] += btn_types.map(function(b) {
+				return '<button tabindex="-1" type="button" class="btn btn-sm btn-outline-'+b[0]+'">'+b[1]+'</button>'+b[2];
+			}).join('');
+			state[c][bucket] += '<input type="checkbox" class="mx-2 align-middle rt-change-tick"></div><div class="text-right my-1 rt-gold-input"><input type="text" class="rt-gold-input-box"></input> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldNewAccept">Add as Gold</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnGoldNewCancel">Cancel</button></div></td></tr>'+"\n";
 		}
 	});
 
@@ -897,9 +938,14 @@ function cb_load(rv) {
 	$('.btnDiffDel').off().click(btn_diff_del);
 	$('.btnGoldReplace').off().click(btn_gold_replace);
 	$('.btnGoldAdd').off().click(btn_gold_add);
+	$('.btnGoldNew').off().click(btn_gold_new);
+	$('.btnGoldNewAccept').off().click(btn_gold_new_accept);
+	$('.btnGoldNewCancel').off().click(btn_gold_new_cancel);
 	$('.btnAcceptUntil').off().click(btn_accept_until);
 	$('.btnAccept').off().click(btn_accept);
 	$('.nav-link').off().click(btn_show_tab);
+
+	$('.rt-gold-input').hide();
 
 	if ($('.btnFilter.active').attr('data-which') !== '*') {
 		$('.btnFilter.active').click();
@@ -962,12 +1008,12 @@ function cb_accept_nd(rv) {
 	let s = ['#rt-added', '#rt-deleted'];
 	for (let i=0 ; i<s.length ; ++i) {
 		$(s[i]).find('.corp-'+rv.c).remove();
-		if (!$(s[i]).find('tbody').length) {
+		if ($(s[i]).find('tr').length == 1) {
 			$(s[i]).hide();
 		}
 	}
 
-	if (!$('#rt-added,#rt-deleted').find('tbody').length) {
+	if ($('#rt-added,#rt-deleted').find('tr').length <= 2) {
 		$('.rt-added,.rt-deleted,.rt-add-del-warn').hide();
 	}
 }
