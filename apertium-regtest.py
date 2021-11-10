@@ -765,13 +765,12 @@ class RegtestShell(cmd.Cmd):
     current_hash = None
     end_step = None
     show_step = None
-    def __init__(self, autosave=True):
+    def __init__(self):
         print('\nRunning regression tests for %s' % os.path.basename(os.getcwd()))
         print('Type `help` for a list of available commands.\n')
         print('Loading corpora...')
         for k in sorted(Corpus.all_corpora.keys()):
             self.load_corpus(k)
-        self.autosave = autosave
         self.next_hash()
         super().__init__()
     def load_corpus(self, name):
@@ -847,7 +846,8 @@ the default display step.'''
 If `upto` has been called, this will not affect steps after the limit.
 Abbreviated form: `a`'''
         if self.current_corpus and self.current_hash:
-            self.lines_accepted[self.current_corpus].append(self.current_hash)
+            corp = Corpus.all_corpora[self.current_corpus]
+            corp.accept([self.current_hash], self.end_step)
         self.next_hash(True)
     def do_k(self, arg):
         'Synonym for `skip`'
@@ -916,29 +916,9 @@ Abbreviated form: `r`'''
             if c.startswith(text):
                 ls.append(c)
         return ls
-    def do_v(self, arg):
-        'Synonym for `save`'
-        self.do_save('')
-    def do_save(self, arg):
-        '''Save all pending changes to expected output.
-This is automatically run by `quit` unless apertium-regtest was
-invoked with `--no-autosave`.
-Abbreviated form: `v`'''
-        for name in sorted(Corpus.all_corpora.keys()):
-            corp = Corpus.all_corpora[name]
-            if name in self.lines_accepted:
-                s = ''
-                if self.end_step:
-                    s = ' through step %s' % self.end_step
-                print('Saving changes to %s%s' % (name, s))
-                corp.accept(self.lines_accepted[name], self.end_step)
-                del self.lines_accepted[name]
-            elif len(corp.unsaved) > 0:
-                print('Saving changes to %s' % name)
-                corp.save()
     def do_upto(self, arg):
         '''Disregard changes after a particular step.
-When `save` is run, no steps after the last value passed to `upto`
+When `accept` is run, no steps after the last value passed to `upto`
 will be updated. Calling without arguments will select the final step.
 If the default display step is after the new limit step, the default
 display step will be set to the new limit step.'''
@@ -957,10 +937,7 @@ display step will be set to the new limit step.'''
         return self.do_quit('')
     def do_quit(self, arg):
         '''Exit the program.
-This will run `save` unless apertium-regtest was invoked with `--no-autosave`.
 Abbreviated form: `q`'''
-        if self.autosave:
-            self.do_save('')
         return True
     def do_EOF(self, arg):
         'Synonym for `quit` provided so that CTRL-D will work as expected.'
@@ -1066,8 +1043,6 @@ apertium-regtest has 3 modes available:
 
     # CLI ARGUMENTS
     cli_gp = parser.add_argument_group('cli mode options')
-    cli_gp.add_argument('--no-autosave', action='store_false', dest='autosave',
-                        help="in cli mode, don't automatically save pending changes upon exiting")
 
     args = parser.parse_args()
     if args.accept:
@@ -1092,7 +1067,7 @@ apertium-regtest has 3 modes available:
     elif args.mode == 'cli':
         load_corpora(args.corpus, static=False)
         try:
-            RegtestShell(args.autosave).cmdloop()
+            RegtestShell().cmdloop()
         except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
             sys.exit(1)
     else:
