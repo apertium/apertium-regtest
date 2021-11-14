@@ -462,12 +462,12 @@ function btn_gold_add() {
 	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
 }
 
-function btn_gold_new() {
+function btn_gold_manual() {
 	let tr = $(this).closest('tr');
 	tr.find('.rt-gold-input').show();
 }
 
-function btn_gold_new_accept() {
+function btn_gold_manual_accept() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
 	let h = tr.attr('data-hash');
@@ -482,7 +482,7 @@ function btn_gold_new_accept() {
 	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
 }
 
-function btn_gold_new_cancel() {
+function btn_gold_manual_cancel() {
 	let tr = $(this).closest('tr');
 	tr.find('.rt-gold-input').hide();
 }
@@ -586,16 +586,29 @@ function btn_checked_invert() {
 	});
 }
 
+function enable_disable_btn(setting, row, clss, btntype) {
+	if (setting) {
+		clss.forEach(function (cls) {
+			row.find(cls).removeClass('disabled').prop('disabled', false).removeClass('btn-outline-secondary').addClass(btntype);
+		});
+	} else {
+		clss.forEach(function (cls) {
+			row.find(cls).addClass('disabled').prop('disabled', true).addClass('btn-outline-secondary').removeClass(btntype);
+		});
+	}
+}
+
 function btn_show_tab() {
 	// Set text and en-/disable partial accept button
-	let btn = $(this).closest('tr').find('.btnAcceptUntil');
-	btn.text('Accept: '+$(this).text());
-	if ($(this).hasClass('rt-changed')) {
-		btn.removeClass('disabled').prop('disabled', false);
-	}
-	else {
-		btn.addClass('disabled').prop('disabled', true);
-	}
+	let row = $(this).closest('tr');
+	row.find('.btnAcceptUntil').text('Accept: '+$(this).text());
+	enable_disable_btn($(this).hasClass('rt-changed'), row,
+					   ['.btnAcceptUntil'], 'btn-outline-success');
+	enable_disable_btn($(this).hasClass('rt-changed'), row,
+					   ['.btnDiffBoth', '.btnDiffIns', '.btnDiffDel'],
+					   'btn-outline-primary');
+	enable_disable_btn($(this).hasClass('rt-tab-has-gold'), row,
+					   ['.btnGoldReplace'], 'btn-outline-warning');
 
 	// Highlight syntax, if in view and not already done
 	if ($(this).attr('data-hilite') || !$(this).isInViewport()) {
@@ -857,6 +870,9 @@ function cb_load(rv) {
 						style += ' show active';
 					}
 				}
+				if (cmd.gold.hasOwnProperty(k)) {
+					style += ' rt-tab-has-gold';
+				}
 
 				if (cmd.gold.hasOwnProperty(k) && cmd.gold[k].length) {
 					filter_no_gold = false;
@@ -902,14 +918,22 @@ function cb_load(rv) {
 
 			let btn_types = [
 				// class, label, trailing space
-				["primary btnDiffBoth", "Diff", " "],
-				["primary btnDiffIns", "Inserted", " "],
-				["primary btnDiffDel", "Deleted", " &nbsp; "],
-				["success btnAcceptUntil", "…", ' <span class="rtGold">&nbsp; '],
-				["warning btnGoldReplace", "Replace as Gold", " "],
-				["warning btnGoldAdd", "Add as Gold", " "],
-				["warning btnGoldNew", "Add New Gold", "</span> &nbsp; "],
-				["success btnAccept", "Accept Result", " "]
+				["primary btnDiffBoth", "Diff", " ",
+				 "show both insertions and deletions"],
+				["primary btnDiffIns", "Inserted", " ",
+				 "show only insertions"],
+				["primary btnDiffDel", "Deleted", " &nbsp; ",
+				 "show only deletions"],
+				["success btnAcceptUntil", "…", ' <span class="rtGold">&nbsp; ',
+				 "accept changes of current and prior steps"],
+				["warning btnGoldReplace", "Replace as Gold", " ",
+				 "remove gold value(s) and replace with current output"],
+				["warning btnGoldAdd", "Add as Gold", " ",
+				 "add current output to list of gold values"],
+				["warning btnGoldManual", "Add Manual Gold ↓", "</span> &nbsp; ",
+				 "manually enter gold value"],
+				["success btnAccept", "Accept Result", " ",
+				 "except the entire output for this entry"]
 			];
 
 			let filter_class = 'rt-filter-all';
@@ -921,9 +945,9 @@ function cb_load(rv) {
 			}
 			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' '+filter_class+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1">'
 			state[c][bucket] += btn_types.map(function(b) {
-				return '<button tabindex="-1" type="button" class="btn btn-sm btn-outline-'+b[0]+'">'+b[1]+'</button>'+b[2];
+				return '<button tabindex="-1" type="button" class="btn btn-sm btn-outline-'+b[0]+'" title="'+b[3]+'">'+b[1]+'</button>'+b[2];
 			}).join('');
-			state[c][bucket] += '<input type="checkbox" class="mx-2 align-middle rt-change-tick"></div><div class="text-right my-1 rt-gold-input"><input type="text" class="rt-gold-input-box"></input> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldNewAccept">Add as Gold</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnGoldNewCancel">Cancel</button></div></td></tr>'+"\n";
+			state[c][bucket] += '<input type="checkbox" class="mx-2 align-middle rt-change-tick"></div><div class="text-right my-1 rt-gold-input"><input type="text" class="rt-gold-input-box"></input> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-warning btnGoldManualAccept">Add as Gold</button> <button tabindex="-1" type="button" class="btn btn-sm btn-outline-primary btnGoldManualCancel">Cancel</button></div></td></tr>'+"\n";
 		}
 	});
 
@@ -974,9 +998,9 @@ function cb_load(rv) {
 	$('.btnDiffDel').off().click(btn_diff_del);
 	$('.btnGoldReplace').off().click(btn_gold_replace);
 	$('.btnGoldAdd').off().click(btn_gold_add);
-	$('.btnGoldNew').off().click(btn_gold_new);
-	$('.btnGoldNewAccept').off().click(btn_gold_new_accept);
-	$('.btnGoldNewCancel').off().click(btn_gold_new_cancel);
+	$('.btnGoldManual').off().click(btn_gold_manual);
+	$('.btnGoldManualAccept').off().click(btn_gold_manual_accept);
+	$('.btnGoldManualCancel').off().click(btn_gold_manual_cancel);
 	$('.btnAcceptUntil').off().click(btn_accept_until);
 	$('.btnAccept').off().click(btn_accept);
 	$('.nav-link').off().click(btn_show_tab);
