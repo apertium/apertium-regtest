@@ -961,9 +961,11 @@ def check_hash(corpus, hsh):
                 expect = False
     return expect, gold
 
-def static_test(ignore_add=False):
+def static_test(ignore_add=False, threshold=100):
     n = len(Corpus.all_corpora.items())
     changed = set()
+    total_tests = 0
+    total_passes = 0
     for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
         print('Corpus %s of %s: %s' % (i, n, name))
         if not corp.loaded:
@@ -989,6 +991,8 @@ def static_test(ignore_add=False):
                 same += 1
                 if g:
                     gold += 1
+        total_tests += total
+        total_passes += same
         if total > 0:
             print('  %s/%s (%s%%) tests pass' % (same, total, round(100.0*same/total, 2)), end='')
             if same != total:
@@ -1001,10 +1005,9 @@ def static_test(ignore_add=False):
     if changed:
         print('There were changes! Rerun in interactive mode to update tests.')
         print('Changed corpora: ' + ', '.join(sorted(changed)))
-        return False
     else:
         print('All tests pass.')
-    return True
+    return ((100.0 * total_passes) / total_tests) >= threshold
 
 if __name__ == '__main__':
     load_modes()
@@ -1033,6 +1036,11 @@ apertium-regtest has 3 modes available:
     test_gp = parser.add_argument_group('test mode options')
     test_gp.add_argument('-i', '--ignore-add', action='store_true',
                          help="in test mode, don't count added or deleted lines as failing")
+    default_min = 100
+    if os.environ.get('AP_REGTEST_MIN','').isnumeric():
+        default_min = int(os.environ['AP_REGTEST_MIN'])
+    test_gp.add_argument('-t', '--threshold', type=int, default=default_min,
+                         help="percentage of tests required to count as passing (default 100 or AP_REGTEST_MIN)")
 
     # WEB ARGUMENTS
     web_gp = parser.add_argument_group('web mode options')
@@ -1057,7 +1065,7 @@ apertium-regtest has 3 modes available:
     if args.mode == 'test':
         load_corpora(args.corpus, static=True)
         try:
-            if not static_test(args.ignore_add):
+            if not static_test(args.ignore_add, threshold=args.threshold):
                 sys.exit(1)
         except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
             sys.exit(1)
