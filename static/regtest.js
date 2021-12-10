@@ -933,7 +933,7 @@ function cb_load(rv) {
 				["warning btnGoldManual", "Add Manual Gold ↓", "</span> &nbsp; ",
 				 "manually enter gold value"],
 				["success btnAccept", "Accept Result", " ",
-				 "except the entire output for this entry"]
+				 "accept the entire output for this entry"]
 			];
 
 			let filter_class = 'rt-filter-all';
