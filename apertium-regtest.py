@@ -18,6 +18,8 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
+import shutil
 import xml.etree.ElementTree
 import zlib
 
@@ -30,6 +32,18 @@ class InputFileIsEmpty(Exception):
     pass
 class ErrorInPipeline(Exception):
     pass
+
+def ensure_javascript(spath):
+    if not os.path.exists(spath + '/bootstrap.css') or not os.path.exists(spath + '/bootstrap.js') or not os.path.exists(spath + '/jquery.js') or not os.path.exists(spath + '/diff.js'):
+        print('Downloading Bootstrap, jQuery, and jsDiff from the jsDelivr CDN')
+        with urllib.request.urlopen('https://cdn.jsdelivr.net/npm/bootstrap@5.1/dist/css/bootstrap.min.css') as response, open(spath + '/bootstrap.css', 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+        with urllib.request.urlopen('https://cdn.jsdelivr.net/npm/bootstrap@5.1/dist/js/bootstrap.min.js') as response, open(spath + '/bootstrap.js', 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+        with urllib.request.urlopen('https://cdn.jsdelivr.net/npm/jquery@3.6/dist/jquery.min.js') as response, open(spath + '/jquery.js', 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+        with urllib.request.urlopen('https://cdn.jsdelivr.net/npm/diff@4.0/dist/diff.min.js') as response, open(spath + '/diff.js', 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
 
 def load_input(fname):
     try:
@@ -744,6 +758,7 @@ class BigQueueServer(socketserver.ThreadingTCPServer):
 
 def start_server(port, page_size=25):
     d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static/')
+    ensure_javascript(d)
     handle = partial(CallbackRequestHandler, directory=d, page_size=page_size)
     print('Starting server')
     print('Open http://localhost:%d in your browser' % port)
