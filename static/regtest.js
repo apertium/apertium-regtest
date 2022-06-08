@@ -464,7 +464,15 @@ function btn_gold_add() {
 
 function btn_gold_manual() {
 	let tr = $(this).closest('tr');
-	tr.find('.rt-gold-input').show();
+	let val = tr.find('.rt-output.active').attr('data-output');
+	tr.find('.rt-gold-input').show().find('input').val(val);
+}
+
+function make_gold_list(golds) {
+	let ul = '<ul class="list-group rt-gold">';
+	ul += golds.map(g => '<li class="list-group-item">'+esc_html(g)+'</li>').join('');
+	ul += '</ul>';
+	return ul;
 }
 
 function btn_gold_manual_accept() {
@@ -480,6 +488,9 @@ function btn_gold_manual_accept() {
 	gs.push(tr.find('.rt-gold-input-box').val());
 	let tid = toast('Adding Gold', 'Corpus '+c+' sentence '+h+' step '+s);
 	post({a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs)}).done(function(rv) { $(tid).toast('hide'); cb_accept(rv); });
+	let tab = tr.find('.rt-output.active');
+	tab.find('.rt-gold').remove();
+	tab.append(make_gold_list(gs));
 }
 
 function btn_gold_manual_cancel() {
@@ -891,12 +902,7 @@ function cb_load(rv) {
 				body += '<div class="tab-pane'+style+' rt-output p-1" id="'+id+'" role="tabpanel" data-type="'+cmd.type+'"'+expect+' data-output="'+output+'"><pre>'+output+'</pre>';
 
 				if (cmd.gold.hasOwnProperty(k)) {
-					let ul = '<ul class="list-group rt-gold">';
-					for (let g = 0; g < cmd.gold[k].length; g++) {
-						ul += '<li class="list-group-item">'+esc_html(cmd.gold[k][g])+'</li>';
-					}
-					ul += '</ul>';
-					body += ul;
+					body += make_gold_list(cmd.gold[k]);
 				}
 				body += '</div>';
 
