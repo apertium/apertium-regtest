@@ -77,6 +77,11 @@ input.rt-gold-input-box {
     width: 75%;
 }
 
+select.selectDiffMode {
+    width: 100px;
+    display: inline-block;
+}
+
 .rt-count {
 	font-size: 70%;
 	margin-left: 20px;

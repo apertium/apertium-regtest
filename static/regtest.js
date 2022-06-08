@@ -411,6 +411,12 @@ function _diff_toggle(where, show, hide) {
 	}
 }
 
+function select_diff() {
+	let div = $(this).closest('tr').find('.tab-pane:visible');
+	div.find('ins,del').hide();
+	div.find($(this).val()).show();
+}
+
 function btn_diff_both() {
 	return _diff_toggle(this, 'ins,del');
 }
@@ -616,8 +622,7 @@ function btn_show_tab() {
 	enable_disable_btn($(this).hasClass('rt-changed'), row,
 					   ['.btnAcceptUntil'], 'btn-outline-success');
 	enable_disable_btn($(this).hasClass('rt-changed'), row,
-					   ['.btnDiffBoth', '.btnDiffIns', '.btnDiffDel'],
-					   'btn-outline-primary');
+					   ['.selectDiffMode'], 'btn-outline-primary');
 	enable_disable_btn($(this).hasClass('rt-tab-has-gold'), row,
 					   ['.btnGoldReplace'], 'btn-outline-warning');
 
@@ -924,12 +929,6 @@ function cb_load(rv) {
 
 			let btn_types = [
 				// class, label, trailing space
-				["primary btnDiffBoth", "Diff", " ",
-				 "show both insertions and deletions"],
-				["primary btnDiffIns", "Inserted", " ",
-				 "show only insertions"],
-				["primary btnDiffDel", "Deleted", " &nbsp; ",
-				 "show only deletions"],
 				["success btnAcceptUntil", "…", ' <span class="rtGold">&nbsp; ',
 				 "accept changes of current and prior steps"],
 				["warning btnGoldReplace", "Replace as Gold", " ",
@@ -949,7 +948,8 @@ function cb_load(rv) {
 			if (filter_unmatched_gold) {
 				filter_class += ' rt-filter-unmatched-gold';
 			}
-			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' '+filter_class+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1">'
+			state[c][bucket] += '<tr data-corp="'+c+'" data-hash="'+k+'" class="'+changed_result+' '+filter_class+' hash-'+k+'"><td>'+nav+body+'<div class="text-right my-1">';
+			state[c][bucket] += '<select class="form-select form-select-sm selectDiffMode" title="Hide insertions or deletions in diff"><option selected value="ins,del">Diff</option><option value="ins">Inserted</option><option value="del">Deleted</option></select>&nbsp;';
 			state[c][bucket] += btn_types.map(function(b) {
 				return '<button tabindex="-1" type="button" class="btn btn-sm btn-outline-'+b[0]+'" title="'+b[3]+'">'+b[1]+'</button>'+b[2];
 			}).join('');
@@ -999,9 +999,7 @@ function cb_load(rv) {
 	$('.rt-changes').show();
 
 	$('.btnSelectTab').off().click(btn_select_tab);
-	$('.btnDiffBoth').off().click(btn_diff_both);
-	$('.btnDiffIns').off().click(btn_diff_ins);
-	$('.btnDiffDel').off().click(btn_diff_del);
+	$('.selectDiffMode').off().change(select_diff);
 	$('.btnGoldReplace').off().click(btn_gold_replace);
 	$('.btnGoldAdd').off().click(btn_gold_add);
 	$('.btnGoldManual').off().click(btn_gold_manual);
