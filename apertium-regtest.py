@@ -79,7 +79,7 @@ hash_format = re.compile(r'\[([A-Za-z0-9_-]+)(#\d+|)\](.*)\[/\1\]', re.DOTALL)
 # in the expected files in 365 repositories, so we need to still
 # parse it - 2021-07-23
 
-def load_output(fname):
+def load_output(fname, should_sort_analyses=False):
     try:
         with open(fname, 'r') as fin:
             ret = {}
@@ -88,6 +88,8 @@ def load_output(fname):
                 content = content_.strip()
                 if not content:
                     print('ERROR: Entry %s in %s was empty!' % (hsh, fname))
+                if should_sort_analyses:
+                    content = sort_analyses(content)
                 l = 0
                 if line:
                     l = int(line[1:])
@@ -128,6 +130,63 @@ def save_gold(fname, data):
             for ln in sorted(set(data[inhash])):
                 fout.write('%s [/option]\n' % ln)
             fout.write('[/%s]\n' % inhash)
+
+apertium_wblank_pat = (r'(?:\[\[' +   # [[
+                       ('(?:' +
+                        r'[^\]\\]|' + # not ] or \\
+                        r'\\.|' +     # or an escaped character
+                        r'\](?!\])' + # ] not followed by ]
+                        ')*') +
+                       r'\]\])')      # ]]
+apertium_superblank_pat = (r'(?:\[' +     # [
+                           ('(?:' +
+                            r'[^\]\\]|' + # not ] or \\
+                            r'\\.' +      # or an escaped character
+                            ')*') +
+                           r'\])')        # ]
+apertium_blank_pat = ('(?:' +
+                      r'[^\[\]\\^]|' + # not []\^
+                      apertium_superblank_pat +
+                      ')*' +
+                      apertium_wblank_pat +
+                      '?')
+apertium_blank_regex = re.compile(apertium_blank_pat)
+
+def sort_analyses(instr):
+    ret = ''
+    s = instr
+    while s:
+        m = apertium_blank_regex.match(s)
+        ret += s[:m.end()]
+        s = s[m.end():]
+        if s and s[0] == '^':
+            pieces = []
+            last = 0
+            esc = False
+            for i in range(len(s)):
+                if esc:
+                    esc = False
+                    continue
+                elif s[i] == '\\':
+                    esc = True
+                elif s[i] == '/':
+                    pieces.append(s[last:i])
+                    last = i+1
+                elif s[i] == '$':
+                    pieces.append(s[last:i])
+                    s = s[i+1:]
+                    break
+            else:
+                ret += s
+                s = ''
+                break
+            ret += pieces[0]
+            if len(pieces) > 1:
+                ret += '/'
+                ret += '/'.join(sorted(pieces[1:]))
+            ret += '$'
+    ret += s # if something goes wrong, return the rest of the string as-is
+    return ret
 
 def run_command(cmd, intxt, outfile, shell=False):
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -355,6 +414,12 @@ class Corpus:
         self.command_list = ['all']
         if self.mode:
             self.command_list = Mode.all_modes[self.mode].get_commands()
+        self.sort = []
+        if 'sort' in blob:
+            if isinstance(blob['sort'], list):
+                self.sort = blob['sort']
+            elif blob['sort']:
+                self.sort = self.command_list
         self.commands = {c:i for i, c in enumerate(self.command_list)}
         self.relevant_commands = blob.get('relevant', [self.command_list[-1]])
         if not isinstance(self.relevant_commands, list):
@@ -414,7 +479,8 @@ class Corpus:
         }
         for c in self.command_list:
             expfile = self.exp_name(c)
-            outdata = load_output(self.out_name(c))
+            outdata = load_output(self.out_name(c),
+                                  should_sort_analyses=(c in self.sort))
             expdata = {}
             if os.path.isfile(expfile):
                 expdata = load_output(expfile)
