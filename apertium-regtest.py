@@ -1091,7 +1091,7 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
             print('There were changes!')
             print('The tests need to be updated.')
             ls = sorted(changed)
-            print('The copora that contain changes are:', ', '.join(ls))
+            print('The corpora that contain changes are:', ', '.join(ls))
             print('This can be done in a browser by running')
             print('')
             print('  apertium-regtest web')
@@ -1140,8 +1140,10 @@ apertium-regtest has 3 modes available:
         default_min = int(os.environ['AP_REGTEST_MIN'])
     test_gp.add_argument('-t', '--threshold', type=int, default=default_min,
                          help="percentage of tests required to count as passing (default 100 or AP_REGTEST_MIN)")
+    default_quiet = os.environ.get('AP_REGTEST_QUIET', 'no').lower() == 'yes'
     test_gp.add_argument('-q', '--quiet', action='store_true',
-                         help="print minimal error message on test failure")
+                         help="print minimal error message on test failure",
+                         default=default_quiet)
 
     # WEB ARGUMENTS
     web_gp = parser.add_argument_group('web mode options')
