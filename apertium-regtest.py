@@ -1084,7 +1084,7 @@ def static_test(ignore_add=False, threshold=100):
             print('')
         print('')
     if changed:
-        print('There were changes! Rerun in interactive mode to update tests.')
+        print('There were changes! Run `apertium-regtest cli` to update tests.')
         print('Changed corpora: ' + ', '.join(sorted(changed)))
     else:
         print('All tests pass.')
