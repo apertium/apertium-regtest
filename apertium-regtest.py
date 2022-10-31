@@ -1042,7 +1042,7 @@ def check_hash(corpus, hsh):
                 expect = False
     return expect, gold
 
-def static_test(ignore_add=False, threshold=100):
+def static_test(ignore_add=False, threshold=100, quiet=True):
     n = len(Corpus.all_corpora.items())
     changed = set()
     total_tests = 0
@@ -1084,8 +1084,26 @@ def static_test(ignore_add=False, threshold=100):
             print('')
         print('')
     if changed:
-        print('There were changes! Run `apertium-regtest cli` to update tests.')
-        print('Changed corpora: ' + ', '.join(sorted(changed)))
+        if quiet:
+            print('There were changes! Run `apertium-regtest cli` to update tests.')
+            print('Changed corpora: ' + ', '.join(sorted(changed)))
+        else:
+            print('There were changes!')
+            print('The tests need to be updated.')
+            ls = sorted(changed)
+            print('The copora that contain changes are:', ', '.join(ls))
+            print('This can be done in a browser by running')
+            print('')
+            print('  apertium-regtest web')
+            print('')
+            print('or on the command line with')
+            print('')
+            print('  apertium-regtest cli')
+            print('')
+            print('A specific corpus can be edited with `-c`, for example')
+            print('')
+            print('  apertium-regtest -c %s web' % ls[0])
+            print('')
     else:
         print('All tests pass.')
     return ((100.0 * total_passes) / total_tests) >= threshold
@@ -1122,6 +1140,8 @@ apertium-regtest has 3 modes available:
         default_min = int(os.environ['AP_REGTEST_MIN'])
     test_gp.add_argument('-t', '--threshold', type=int, default=default_min,
                          help="percentage of tests required to count as passing (default 100 or AP_REGTEST_MIN)")
+    test_gp.add_argument('-q', '--quiet', action='store_true',
+                         help="print minimal error message on test failure")
 
     # WEB ARGUMENTS
     web_gp = parser.add_argument_group('web mode options')
@@ -1146,7 +1166,8 @@ apertium-regtest has 3 modes available:
     if args.mode == 'test':
         load_corpora(args.corpus, static=True)
         try:
-            if not static_test(args.ignore_add, threshold=args.threshold):
+            if not static_test(args.ignore_add, threshold=args.threshold,
+                               quiet=args.quiet):
                 sys.exit(1)
         except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
             sys.exit(1)
