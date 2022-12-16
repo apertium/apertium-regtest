@@ -1107,5 +1107,9 @@ $(function() {
 	$('.btnCheckedAccept').off().click(btn_checked_accept);
 	$('.btnCheckedInvert').off().click(btn_checked_invert);
 
+	$('#selectDiffModeAll').change(function() {
+		$('.selectDiffMode').val(this.value).change();
+	});
+
 	$(window).on('resize scroll', event_scroll);
 });
