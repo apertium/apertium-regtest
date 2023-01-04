@@ -235,7 +235,9 @@ class Step:
         'rtx-proc': 'transfer',
         'apertium-anaphora': 'anaph',
         'cg-conv': 'convert',
-        'vislcg3': 'disam'
+        'vislcg3': 'disam',
+        'apertium-extract-caps': 'decase',
+        'apertium-restore-caps': 'recase'
     }
     morphmodes = {
         '-b': 'biltrans',
@@ -262,7 +264,9 @@ class Step:
             self.args.pop(i)
         self.name = xml.attrib.get('debug-suff', 'unknown')
         if self.name == 'unknown':
-            if self.prog in Step.prognames:
+            if self.prog == 'lsx-proc' and '-p' in self.args:
+                self.name = 'postgen'
+            elif self.prog in Step.prognames:
                 self.name = Step.prognames[self.prog]
             elif self.prog in ['lt-proc', 'hfst-proc']:
                 self.name = 'morph'
