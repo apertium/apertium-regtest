@@ -74,7 +74,7 @@ def load_input_string(fname):
     return txt
 
 # [hash(#line)?] content [/hash]
-hash_format = re.compile(r'\[([A-Za-z0-9_-]+)(#\d+|)\](.*)\[/\1\]', re.DOTALL)
+hash_format = re.compile(r'\[([A-Za-z0-9_-]+)(#\d+|)\](.*?)\[/\1\]', re.DOTALL)
 # the line number is completely useless, but it now appears
 # in the expected files in 365 repositories, so we need to still
 # parse it - 2021-07-23
