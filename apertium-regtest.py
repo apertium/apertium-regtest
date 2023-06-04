@@ -116,7 +116,7 @@ def load_gold(fname):
                     if o2:
                         opts.append(o2)
                 if not opts:
-                    print('ERROR: Empty entry %s in %s' % (ident, fname))
+                    print('ERROR: Empty entry %s in %s' % (hsh, fname))
                     continue
                 ret[hsh] = opts
             return ret
