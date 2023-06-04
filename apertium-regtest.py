@@ -22,6 +22,7 @@ import urllib.request
 import shutil
 import xml.etree.ElementTree
 import zlib
+from typing import Dict, List
 
 def hash_line(s):
     return base64.b64encode(hashlib.sha256(s.encode('utf-8')).digest(), b'-_')[:12].decode('utf-8')
@@ -290,7 +291,7 @@ class Step:
         run_command(cmd, txt, out_name)
 
 class Mode:
-    all_modes = {}
+    all_modes = {}              # type: Dict[str, Mode]
     def __init__(self, xml):
         self.name = xml.attrib['name']
         self.steps = [Step(s) for s in xml[0]]
@@ -389,7 +390,7 @@ def check_git():
 
 class Corpus:
     flat = True
-    all_corpora = {}
+    all_corpora = {}              # type: Dict[str, Corpus]
     def __init__(self, name, blob):
         self.name = name
         self.mode = blob.get('mode', None)
@@ -843,8 +844,9 @@ def start_server(port, page_size=25):
 
 class RegtestShell(cmd.Cmd):
     prompt = '> '
-    lines_todo = defaultdict(list) # { corpus_name : [ hash, hash, ... ] }
-    lines_accepted = defaultdict(list)
+    # lines_todo is { corpus_name : [ hash, hash, ... ] }
+    lines_todo = defaultdict(list) # type: Dict[str, List[str]]
+    lines_accepted = defaultdict(list) # type: Dict[str, List[str]]
     corpus_filter = None
     current_corpus = None
     current_hash = None
