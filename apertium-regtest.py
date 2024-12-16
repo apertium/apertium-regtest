@@ -834,7 +834,7 @@ def start_server(port, page_size=25):
     print('Open http://localhost:%d in your browser' % port)
     with BigQueueServer(('', port), handle) as httpd:
         try:
-   	        httpd.serve_forever()
+            httpd.serve_forever()
         except KeyboardInterrupt:
             print('')
             # the exception raised by sys.exit() gets caught by the

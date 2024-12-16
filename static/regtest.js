@@ -474,13 +474,6 @@ function btn_gold_manual() {
 	tr.find('.rt-gold-input').show().find('input').val(val);
 }
 
-function make_gold_list(golds) {
-	let ul = '<ul class="list-group rt-gold">';
-	ul += golds.map(g => '<li class="list-group-item">'+esc_html(g)+'</li>').join('');
-	ul += '</ul>';
-	return ul;
-}
-
 function btn_gold_manual_accept() {
 	let tr = $(this).closest('tr');
 	let c = tr.attr('data-corp');
@@ -774,6 +767,81 @@ function cb_init(rv) {
 	$('.btnFilterGold').off().click(btn_filter_gold);
 }
 
+function btn_gold_edit(goldText) {
+    let tr = $(this).closest('tr');
+    let c = tr.attr('data-corp');
+    let h = tr.attr('data-hash');
+    let s = tr.find('.nav-link.active').text();
+    let gs = [];
+    let gold = state[c].cmds[state[c].cmds.length - 1].gold;
+
+    if (gold.hasOwnProperty(h)) {
+        gs = gold[h];
+    }
+
+    let currentGold = goldText; 
+    let newGold = prompt('Edit Gold:', currentGold);
+
+    if (newGold !== null && newGold.trim() !== '') {
+        let index = gs.indexOf(currentGold);
+        if (index !== -1) {
+            gs[index] = newGold;
+        }
+        let tid = toast('Editing Gold', 'Corpus ' + c + ' sentence ' + h + ' step ' + s);
+        post({ a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs) }).done(function (rv) {
+            $(tid).toast('hide');
+            cb_accept(rv);
+        });
+    }
+}
+
+
+function btn_gold_delete() {
+    let li = $(this).closest('li'); 
+    let tr = li.closest('tr'); 
+    let c = tr.attr('data-corp');
+    let h = tr.attr('data-hash');
+    let s = tr.find('.nav-link.active').text();
+    let gs = [];
+    let gold = state[c].cmds[state[c].cmds.length-1].gold;
+
+    if (gold.hasOwnProperty(h)) {
+        gs = gold[h];
+    }
+
+    let currentGold = li.text().trim(); 
+    let index = gs.indexOf(currentGold);
+    if (index !== -1) {
+        gs.splice(index, 1); 
+    }
+
+    let tid = toast('Deleting Gold', 'Corpus ' + c + ' sentence ' + h + ' step ' + s);
+    post({ a: 'gold', c: c, h: h, s: s, gs: JSON.stringify(gs) }).done(function (rv) {
+        $(tid).toast('hide');
+        cb_accept(rv);
+    });
+
+    li.remove();
+}
+
+
+function make_gold_list(golds) {
+    let ul = '<ul class="list-group rt-gold">';
+    ul += golds.map(g => {
+        return `
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span class="gold-text">${esc_html(g)}</span>
+                <div class="btn-container">
+                    <button type="button" class="btn btn-sm btn-outline-info my-2 btnEditGold">Edit</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger my-2 btnDeleteGold">Delete</button>
+                </div>
+            </li>`;
+    }).join('');
+    ul += '</ul>';
+    return ul;
+}
+
+
 function cb_load(rv) {
 	$('.rt-added,.rt-deleted,.rt-add-del-warn,.rt-deleted').hide();
 	$('#rt-added,#rt-deleted').find('tbody').remove();
@@ -785,6 +853,16 @@ function cb_load(rv) {
 	let nd_corps = {};
 
 	state = rv.state;
+
+	$(document).on('click', '.rt-gold .btnEditGold', function () {
+		let li = $(this).closest('li');  
+		let goldText = li.find('.gold-text').text();  
+		btn_gold_edit.call(this, goldText);  
+	});
+	
+	$(document).on('click', '.rt-gold .btnDeleteGold', function () {
+		btn_gold_delete.call(this); 
+	});	
 
 	let pages = '';
 	if (state._pages > 1) {
