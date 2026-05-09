@@ -1051,6 +1051,7 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
     changed = set()
     total_tests = 0
     total_passes = 0
+    total_gold = 0
     for i, (name, corp) in enumerate(Corpus.all_corpora.items(), 1):
         print('Corpus %s of %s: %s' % (i, n, name))
         if not corp.loaded:
@@ -1078,6 +1079,7 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
                     gold += 1
         total_tests += total
         total_passes += same
+        total_gold += gold
         if total > 0:
             print('  %s/%s (%s%%) tests pass' % (same, total, round(100.0*same/total, 2)), end='')
             if same != total:
@@ -1087,6 +1089,9 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
         else:
             print('')
         print('')
+    if total_tests > 0:
+        print('%s/%s (%s%%) tests match gold.' % (
+            total_gold, total_tests, round(100.0*total_gold/total_tests, 2)))
     if changed:
         if quiet:
             print('There were changes! Run `apertium-regtest cli` to update tests.')
