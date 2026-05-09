@@ -1046,7 +1046,39 @@ def check_hash(corpus, hsh):
                 expect = False
     return expect, gold
 
-def static_test(ignore_add=False, threshold=100, quiet=True):
+def print_form(corpus, hsh):
+    line, content = corpus.data['inputs'].get(hsh, ['', ''])
+    print('    [%s#%s] %s' % (hsh, line, content))
+    for c in corpus.relevant_commands:
+        data = corpus.step(c)
+        out = data['output'].get(hsh, [0, ''])[1]
+        exp = data['expect'].get(hsh, [0, ''])[1]
+        gld = data['gold'].get(hsh, [])
+        print('      %s output: %s' % (c, out))
+        if out != exp:
+            print('      %s expected: %s' % (c, exp))
+        if out not in gld:
+            if gld:
+                print('      %s gold: %s' % (c, ' | '.join(gld)))
+            else:
+                print('      %s gold: [none]' % c)
+
+def print_forms(corpus, matches):
+    labels = {
+        'gold': 'Forms matching gold:',
+        'not-gold': 'Forms not matching gold:',
+        'expected': 'Forms matching expected output or gold:',
+        'unexpected': 'Forms not matching expected output or gold:'
+    }
+    for kind in ['gold', 'not-gold', 'expected', 'unexpected']:
+        if not matches.get(kind):
+            continue
+        print('  %s' % labels[kind])
+        for hsh in matches[kind]:
+            print_form(corpus, hsh)
+
+def static_test(ignore_add=False, threshold=100, quiet=True, show=None):
+    show = set(show or [])
     n = len(Corpus.all_corpora.items())
     changed = set()
     total_tests = 0
@@ -1068,6 +1100,12 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
         total = 0
         same = 0
         gold = 0
+        matches = {
+            'gold': [],
+            'not-gold': [],
+            'expected': [],
+            'unexpected': []
+        }
         for hsh in corp.data['inputs']:
             if hsh in corp.data['add']:
                 continue
@@ -1075,8 +1113,19 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
             total += 1
             if e:
                 same += 1
+                matches['expected'].append(hsh)
                 if g:
                     gold += 1
+                    matches['gold'].append(hsh)
+                else:
+                    matches['not-gold'].append(hsh)
+            else:
+                matches['unexpected'].append(hsh)
+                if g:
+                    gold += 1
+                    matches['gold'].append(hsh)
+                else:
+                    matches['not-gold'].append(hsh)
         total_tests += total
         total_passes += same
         total_gold += gold
@@ -1088,6 +1137,8 @@ def static_test(ignore_add=False, threshold=100, quiet=True):
             print(' (%s/%s (%s%%) match gold)' % (gold, same, round(100.0*gold/same, 2)))
         else:
             print('')
+        if show:
+            print_forms(corp, {k:v for k, v in matches.items() if k in show})
         print('')
     if total_tests > 0:
         print('%s/%s (%s%%) tests match gold.' % (
@@ -1153,6 +1204,9 @@ apertium-regtest has 3 modes available:
     test_gp.add_argument('-q', '--quiet', action='store_true',
                          help="print minimal error message on test failure",
                          default=default_quiet)
+    test_gp.add_argument('--show', action='append',
+                         choices=['gold', 'not-gold', 'expected', 'unexpected'],
+                         help="in test mode, show forms in the selected category; expected/unexpected use the same expected-or-gold pass criterion as the summary")
 
     # WEB ARGUMENTS
     web_gp = parser.add_argument_group('web mode options')
@@ -1178,7 +1232,7 @@ apertium-regtest has 3 modes available:
         load_corpora(args.corpus, static=True)
         try:
             if not static_test(args.ignore_add, threshold=args.threshold,
-                               quiet=args.quiet):
+                               quiet=args.quiet, show=args.show):
                 sys.exit(1)
         except (InputFileDoesNotExist, InputFileIsEmpty, ErrorInPipeline):
             sys.exit(1)
