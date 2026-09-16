@@ -6,7 +6,7 @@ import subprocess
 import sys
 import os
 
-parser = argparse.ArgumentParser('convert flat apertium-regtest directory to one with subfolders')
+parser = argparse.ArgumentParser('Convert flat Apertium-regtest directory to one with subfolders')
 args = parser.parse_args()
 
 if not os.path.isdir('test'):
