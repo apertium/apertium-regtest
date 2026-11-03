@@ -237,7 +237,8 @@ class Step:
         'cg-conv': 'convert',
         'vislcg3': 'disam',
         'apertium-extract-caps': 'decase',
-        'apertium-restore-caps': 'recase'
+        'apertium-restore-caps': 'recase',
+        'apertium-normalize': 'normalize',
     }
     morphmodes = {
         '-b': 'biltrans',
